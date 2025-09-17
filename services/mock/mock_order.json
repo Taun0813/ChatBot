@@ -1,0 +1,70 @@
+{
+  "orders": [
+    {
+      "id": "1234",
+      "orderId": "1234",
+      "status": "Đang giao hàng",
+      "totalAmount": 22990000,
+      "items": [
+        {
+          "productId": "iphone_15_128gb",
+          "name": "iPhone 15 128GB",
+          "quantity": 1,
+          "price": 22990000
+        }
+      ],
+      "shippingAddress": {
+        "name": "Nguyễn Văn A",
+        "address": "123 Đường ABC, Quận 1, TP.HCM",
+        "phone": "0123456789"
+      },
+      "estimatedDelivery": "2024-01-15",
+      "createdAt": "2024-01-10T10:30:00Z",
+      "updatedAt": "2024-01-12T14:20:00Z"
+    },
+    {
+      "id": "5678",
+      "orderId": "ORD-5678",
+      "status": "Đã giao hàng",
+      "totalAmount": 18990000,
+      "items": [
+        {
+          "productId": "xiaomi_14_pro_256gb",
+          "name": "Xiaomi 14 Pro 256GB",
+          "quantity": 1,
+          "price": 18990000
+        }
+      ],
+      "shippingAddress": {
+        "name": "Trần Thị B",
+        "address": "456 Đường XYZ, Quận 2, TP.HCM",
+        "phone": "0987654321"
+      },
+      "estimatedDelivery": "2024-01-08",
+      "createdAt": "2024-01-05T09:15:00Z",
+      "updatedAt": "2024-01-08T16:45:00Z"
+    },
+    {
+      "id": "9999",
+      "orderId": "ORD-9999",
+      "status": "Đang xử lý",
+      "totalAmount": 28990000,
+      "items": [
+        {
+          "productId": "samsung_galaxy_s24_ultra_256gb",
+          "name": "Samsung Galaxy S24 Ultra 256GB",
+          "quantity": 1,
+          "price": 28990000
+        }
+      ],
+      "shippingAddress": {
+        "name": "Lê Văn C",
+        "address": "789 Đường DEF, Quận 3, TP.HCM",
+        "phone": "0369258147"
+      },
+      "estimatedDelivery": "2024-01-20",
+      "createdAt": "2024-01-14T11:00:00Z",
+      "updatedAt": "2024-01-14T11:00:00Z"
+    }
+  ]
+}

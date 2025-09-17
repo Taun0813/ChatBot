@@ -1,0 +1,31 @@
+{
+  "payments": [
+    {
+      "id": "PAY-1234",
+      "orderId": "1234",
+      "amount": 22990000,
+      "status": "Thành công",
+      "paymentMethod": "Thẻ tín dụng",
+      "transactionId": "TXN-123456789",
+      "createdAt": "2024-01-10T10:35:00Z"
+    },
+    {
+      "id": "PAY-5678",
+      "orderId": "5678",
+      "amount": 18990000,
+      "status": "Thành công",
+      "paymentMethod": "Ví điện tử",
+      "transactionId": "TXN-987654321",
+      "createdAt": "2024-01-05T09:20:00Z"
+    },
+    {
+      "id": "PAY-9999",
+      "orderId": "9999",
+      "amount": 28990000,
+      "status": "Đang xử lý",
+      "paymentMethod": "Chuyển khoản",
+      "transactionId": "TXN-456789123",
+      "createdAt": "2024-01-14T11:05:00Z"
+    }
+  ]
+}

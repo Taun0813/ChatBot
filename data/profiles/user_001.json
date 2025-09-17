@@ -1,0 +1,35 @@
+{
+  "user_id": "user_001",
+  "created_at": "2025-09-17T00:02:16.537937",
+  "last_accessed": "2025-09-17T00:03:05.804138",
+  "preferences": {
+    "brands": {},
+    "categories": {},
+    "price_range": {},
+    "min_rating": 0,
+    "features": {}
+  },
+  "search_history": [
+    {
+      "query": "Samsung Galaxy camera tốt",
+      "timestamp": "2025-09-17T00:06:36.598551"
+    }
+  ],
+  "purchase_history": [],
+  "interaction_history": [
+    {
+      "type": "search",
+      "product_id": null,
+      "query": "Samsung Galaxy camera tốt",
+      "rating": null,
+      "timestamp": "2025-09-17T00:06:36.598551"
+    }
+  ],
+  "profile_data": {
+    "total_searches": 0,
+    "total_purchases": 0,
+    "favorite_brands": [],
+    "budget_range": null,
+    "preferred_features": []
+  }
+}

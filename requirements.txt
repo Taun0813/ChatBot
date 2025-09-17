@@ -1,0 +1,260 @@
+# ===========================================
+# AI AGENT SYSTEM - UPDATED REQUIREMENTS
+# ===========================================
+
+# Core FastAPI and web framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.0.3
+python-multipart==0.0.6
+
+# ===========================================
+# FREE AI API LIBRARIES (RECOMMENDED)
+# ===========================================
+
+# Google Gemini API (FREE)
+google-generativeai==0.3.2
+google-cloud-aiplatform==1.38.1
+
+# Groq API (FREE - High Performance)
+groq==0.4.1
+
+# Ollama (FREE - Local)
+ollama==0.1.7
+
+# ===========================================
+# OPTIONAL PAID AI API LIBRARIES
+# ===========================================
+
+# OpenAI API
+openai==1.3.5
+
+# Anthropic Claude API
+anthropic==0.7.8
+
+# Cohere API
+cohere==4.37
+
+# Hugging Face
+huggingface-hub==0.19.4
+transformers==4.35.2
+
+# ===========================================
+# VECTOR DATABASE (CLOUD ONLY)
+# ===========================================
+
+# Pinecone Vector Database
+pinecone-client==2.2.4
+
+# ===========================================
+# CACHING LAYER
+# ===========================================
+
+# Redis Cache
+redis[hiredis]==5.0.1
+redis-py-cluster==2.1.3
+
+# Memory Cache
+diskcache==5.6.3
+cachetools==5.3.2
+
+# ===========================================
+# MONITORING & OBSERVABILITY
+# ===========================================
+
+# Metrics Collection
+prometheus-client==0.19.0
+psutil==5.9.6
+
+# Logging
+structlog==23.2.0
+python-json-logger==2.0.7
+coloredlogs==15.0.1
+
+# Tracing (Optional)
+opentelemetry-api==1.21.0
+opentelemetry-sdk==1.21.0
+opentelemetry-instrumentation-fastapi==0.42b0
+
+# ===========================================
+# DATA PROCESSING & ML
+# ===========================================
+
+# Core ML Libraries
+torch==2.1.0
+numpy==1.24.3
+pandas==2.1.3
+scikit-learn==1.3.2
+scipy==1.11.4
+
+# Data Processing
+datasets==2.14.6
+evaluate==0.4.1
+accelerate==0.24.1
+peft==0.6.2
+bitsandbytes==0.41.3
+
+# NLP Libraries
+nltk==3.8.1
+spacy==3.7.2
+underthesea==6.7.0
+pyvi==0.1.1
+
+# ===========================================
+# DATABASE & STORAGE
+# ===========================================
+
+# SQL Database
+sqlalchemy==2.0.23
+alembic==1.12.1
+psycopg2-binary==2.9.9
+
+# NoSQL (Optional)
+pymongo==4.6.0
+motor==3.3.2
+
+# ===========================================
+# HTTP & API CLIENT
+# ===========================================
+
+# HTTP Clients
+httpx==0.25.2
+aiohttp==3.9.1
+requests==2.31.0
+
+# API Documentation
+sphinx==7.2.6
+sphinx-rtd-theme==1.3.0
+
+# ===========================================
+# CONFIGURATION & ENVIRONMENT
+# ===========================================
+
+# Environment Management
+python-dotenv==1.0.0
+pyyaml==6.0.1
+toml==0.10.2
+
+# ===========================================
+# PERSONALIZATION & ML
+# ===========================================
+
+# Recommendation Systems
+scikit-surprise==1.1.3
+implicit==0.7.2
+
+# Reinforcement Learning
+gym==0.29.1
+stable-baselines3==2.2.1
+
+# ===========================================
+# TESTING
+# ===========================================
+
+# Testing Framework
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+pytest-xdist==3.5.0
+
+# Test Data
+factory-boy==3.3.0
+faker==20.1.0
+
+# ===========================================
+# DEVELOPMENT TOOLS
+# ===========================================
+
+# Code Quality
+black==23.11.0
+isort==5.12.0
+flake8==6.1.0
+mypy==1.7.1
+pre-commit==3.6.0
+
+# Debugging
+ipdb==0.13.13
+pdbpp==0.10.3
+
+# ===========================================
+# UTILITIES
+# ===========================================
+
+# Date/Time
+python-dateutil==2.8.2
+pytz==2023.3
+
+# Progress Bars
+tqdm==4.66.1
+rich==13.7.0
+
+# File Processing
+openpyxl==3.1.2
+python-magic==0.4.27
+pillow==10.1.0
+
+# ===========================================
+# SECURITY
+# ===========================================
+
+# Authentication & Authorization
+cryptography==41.0.7
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Rate Limiting
+slowapi==0.1.9
+limits==3.6.0
+
+# ===========================================
+# BACKGROUND TASKS
+# ===========================================
+
+# Task Queue
+celery==5.3.4
+redis==5.0.1
+
+# ===========================================
+# MODEL SERVING & OPTIMIZATION
+# ===========================================
+
+# Model Optimization
+onnxruntime==1.16.3
+optimum==1.14.1
+torch-audio==2.1.0
+
+# ===========================================
+# VISUALIZATION (OPTIONAL)
+# ===========================================
+
+# Data Visualization
+matplotlib==3.8.2
+seaborn==0.13.0
+plotly==5.17.0
+
+# ===========================================
+# PERFORMANCE & PRODUCTION
+# ===========================================
+
+# Production Server
+gunicorn==21.2.0
+uvloop==0.19.0
+
+# Performance Monitoring
+memory-profiler==0.61.0
+py-spy==0.3.14
+
+# ===========================================
+# INSTALLATION INSTRUCTIONS
+# ===========================================
+
+# Cài đặt tất cả dependencies:
+# pip install -r requirements.txt
+
+# Cài đặt chỉ core dependencies (minimal):
+# pip install fastapi uvicorn pydantic pydantic-settings google-generativeai pinecone-client redis httpx python-dotenv psutil
+
+# Cài đặt cho development:
+# pip install -r requirements.txt black isort flake8 mypy pytest pytest-asyncio pytest-cov
