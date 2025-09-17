@@ -51,9 +51,12 @@ class HealthChecker:
         self.cached_results: Dict[str, HealthCheckResult] = {}
         self.is_running = False
     
-    def register_check(self, name: str, check_func: Callable) -> None:
+    def register_check(self, name: str, check_func: Callable, *args, **kwargs) -> None:
         """Register a custom health check"""
-        self.custom_checks[name] = check_func
+        # Create a wrapper function that passes the arguments
+        def wrapped_check():
+            return check_func(*args, **kwargs)
+        self.custom_checks[name] = wrapped_check
         self.logger.info(f"Registered health check: {name}")
     
     async def run_all_checks(self) -> Dict[str, HealthCheckResult]:
@@ -172,13 +175,12 @@ class HealthChecker:
         
         return results
     
-    async def check_application_health(self) -> HealthCheckResult:
+    async def check_application_health(self, router_instance=None) -> HealthCheckResult:
         """Check application-specific health"""
         start_time = time.time()
         
         try:
             # Check if router is initialized
-            from app import router_instance
             if router_instance is None:
                 return HealthCheckResult(
                     name="application",
