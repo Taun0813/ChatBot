@@ -16,7 +16,7 @@ class GeminiLoader(BaseModelLoader):
     
     def __init__(
         self,
-        model_name: str = "gemini-1.5-flash",
+        model_name: str = "gemini-2.0-flash",
         max_tokens: int = 2048,
         temperature: float = 0.7,
         top_p: float = 0.9,

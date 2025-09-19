@@ -1,106 +1,144 @@
 # AI Agent System - Hybrid Orchestrator
 
-Hệ thống AI Agent thông minh với **Hybrid Orchestrator** kết hợp rule-based và ML-based routing, sử dụng dataset thực tế với 27,000+ sản phẩm điện thoại.
+Hệ thống AI Agent thông minh cho thương mại điện tử với **Hybrid Orchestrator** kết hợp rule-based và ML-based routing, sử dụng dataset thực tế với 27,000+ sản phẩm điện thoại.
 
-## 🚀 Tính năng chính
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-- **🤖 Hybrid Orchestrator**: Kết hợp rule-based + ML-based routing (accuracy 85-95%)
-- **📊 Real Dataset**: 27,000+ sản phẩm điện thoại thực tế từ OnePlus, Samsung, Apple, Xiaomi, etc.
-- **🔍 RAG (Retrieval-Augmented Generation)**: Semantic search với Pinecone vector database
-- **💬 Hội thoại thông minh**: Tương tác tự nhiên với context-aware routing
-- **🔌 Tích hợp API**: Kết nối với các dịch vụ bên ngoài (đơn hàng, thanh toán, bảo hành)
-- **👤 Cá nhân hóa**: Học hỏi từ hành vi người dùng và đưa ra gợi ý phù hợp
-- **🔄 Multi-model support**: Hỗ trợ nhiều LLM (Gemini, Groq, Ollama, OpenAI, Claude)
-- **⚡ Caching**: Hệ thống cache thông minh với Redis và Memory cache
-- **📈 Monitoring**: Theo dõi hiệu suất và metrics real-time với dashboard chi tiết
-- **🎯 Training & Fine-tuning**: Fine-tune model cho domain e-commerce với data pipeline hoàn chỉnh
+## Tính năng chính
 
-## 📁 Cấu trúc thư mục
+- **Hybrid Orchestrator**: Kết hợp rule-based + ML-based routing (độ chính xác 85-95%)
+- **Dataset thực tế**: ~900 sản phẩm điện thoại từ OnePlus, Samsung, Apple, Xiaomi, etc.
+- **RAG System**: Tìm kiếm ngữ nghĩa với Pinecone vector database
+- **Hội thoại thông minh**: Tương tác tự nhiên với context-aware routing
+- **API Integration**: Kết nối với microservices (đơn hàng, thanh toán, bảo hành)
+- **Cá nhân hóa**: Học hỏi từ hành vi người dùng và đưa ra gợi ý phù hợp
+- **Multi-model**: Hỗ trợ nhiều LLM (Gemini, Groq, Ollama, OpenAI, Claude)
+- **Caching**: Hệ thống cache thông minh với Redis và Memory cache
+- **Monitoring**: Theo dõi hiệu suất real-time với dashboard chi tiết
+- **Training**: Fine-tune model cho domain e-commerce với data pipeline hoàn chỉnh
+
+## Kiến trúc hệ thống
+
+### Hybrid Orchestrator Architecture
+```mermaid
+graph TB
+    A[Client Request] --> B[FastAPI App]
+    B --> C[AgnoRouter - Hybrid Orchestrator]
+    
+    C --> D[Rule-based Router]
+    C --> E[ML-based Router]
+    
+    D --> F[Pattern Matching]
+    E --> G[Intent Classification]
+    
+    F --> H[Decision Fusion Engine]
+    G --> H
+    
+    H --> I{Intent Decision}
+    
+    I -->|search| J[RAG Agent]
+    I -->|chat| K[Conversation Agent]
+    I -->|api| L[API Agent]
+    
+    J --> M[Pinecone Vector Search]
+    M --> N[Product Results]
+    N --> O[Personalization]
+    O --> P[Natural Language Response]
+    
+    K --> Q[LLM Model]
+    Q --> R[Context-aware Response]
+    
+    L --> S[External APIs]
+    S --> T[API Response]
+    
+    P --> U[Cache Manager]
+    R --> U
+    T --> U
+    
+    U --> V[Response to Client]
+```
+
+## Cấu trúc thư mục
 
 ```
 ai_agent/
-│── app.py                     # Entry point FastAPI
-│── config.py                  # Configuration management
-│── requirements.txt           # Python dependencies
+├── app.py                        # FastAPI entry point
+├── config.py                     # Configuration management
+├── requirements.txt              # Python dependencies
+├── env.example                   # Environment variables template
+├── init_data.py                  # Data initialization
 │
-├── core/                      # Core logic (Hybrid Orchestrator)
-│   │── models/                # Agent models
-│   │   │── __init__.py
-│   │   │── base_agent.py      # Base agent class
-│   │   │── rag_agent.py       # RAG-specific agent
-│   │   │── conversation_agent.py # Conversation agent
-│   │   │── api_agent.py       # API integration agent
-│   │   │── orchestrator.py    # Agent orchestrator
-│   │── router.py              # Hybrid Orchestrator (Rule-based + ML-based)
-│   │── rag_model.py           # RAG model implementation
-│   │── interaction_model.py   # Conversation model
-│   │── api_model.py           # API model
-│   │── personalization_model.py # Personalization model
-│   │── prompts.py             # Prompt templates
+├── core/                         # Core logic (Hybrid Orchestrator)
+│   ├── models/                   # Agent models
+│   │   ├── base_agent.py         # Base agent class
+│   │   ├── rag_agent.py          # RAG-specific agent
+│   │   ├── conversation_agent.py # Conversation agent
+│   │   ├── api_agent.py          # API integration agent
+│   │   └── orchestrator.py       # Agent orchestrator
+│   ├── router.py                 # Hybrid Orchestrator
+│   ├── rag_model.py              # RAG model implementation
+│   ├── interaction_model.py      # Conversation model
+│   ├── api_model.py              # API model
+│   ├── personalization_model.py  # Personalization model
+│   └── prompts.py                # Prompt templates
 │
-├── adapters/                  # Adapter layer (plug-and-play)
-│   │── model_loader/          # Model loaders
-│   │   │── base_loader.py     # Base loader
-│   │   │── gemini_loader.py   # Google Gemini
-│   │   │── groq_loader.py     # Groq API
-│   │   │── ollama_loader.py   # Ollama local
-│   │   │── openai_loader.py   # OpenAI GPT
-│   │   │── claude_loader.py   # Claude
-│   │── pinecone_client.py     # Pinecone vector DB
+├── adapters/                     # Adapter layer
+│   ├── model_loader/             # Model loaders
+│   │   ├── base_loader.py        # Base loader
+│   │   ├── gemini_loader.py      # Google Gemini
+│   │   ├── groq_loader.py        # Groq API
+│   │   ├── ollama_loader.py      # Ollama local
+│   │   └── openai_loader.py      # OpenAI GPT
+│   └── pinecone_client.py        # Pinecone vector DB
 │
-├── cache/                     # Caching layer
-│   │── redis_cache.py         # Redis cache
-│   │── memory_cache.py        # In-memory cache
-│   │── cache_manager.py       # Cache manager
+├── cache/                        # Caching layer
+│   ├── redis_cache.py            # Redis cache
+│   ├── memory_cache.py           # In-memory cache
+│   └── cache_manager.py          # Cache manager
 │
-├── monitoring/                # Monitoring & observability
-│   │── metrics.py             # Metrics collection
-│   │── health_check.py        # Health monitoring
-│   │── tracing.py            # Request tracing
+├── monitoring/                   # Monitoring & observability
+│   ├── metrics.py                # Metrics collection
+│   ├── health_check.py           # Health monitoring
+│   └── tracing.py                # Request tracing
 │
-├── personalization/           # Personalization layer
-│   │── profile_manager.py     # User profile management
-│   │── recommender.py         # Product recommendations
-│   │── rl_feedback.py         # Reinforcement learning
+├── personalization/              # Personalization layer
+│   ├── profile_manager.py        # User profile management
+│   ├── recommender.py            # Product recommendations
+│   └── rl_feedback.py            # Reinforcement learning
 │
-├── services/                  # Microservices integration
-│   │── product_service.py     # Product API
-│   │── order_service.py       # Order API
-│   │── payment_service.py     # Payment API
-│   │── warranty_service.py    # Warranty API
-│   │── mock/                  # Mock services
-│   │   │── mock_order.json
-│   │   │── mock_warranty.json
-│   │   │── mock_payment.json
+├── services/                     # Microservices integration
+│   ├── product_service.py        # Product API
+│   ├── order_service.py          # Order API
+│   ├── payment_service.py        # Payment API
+│   ├── warranty_service.py       # Warranty API
+│   └── mock/                     # Mock services
+│       ├── mock_order.json
+│       ├── mock_warranty.json
+│       └── mock_payment.json
 │
-├── data/                      # Data management
-│   │── ingest.py              # Data ingestion (supports real dataset)
-│   │── process_dataset.py     # Dataset processing
-│   │── processed/             # Processed data
-│   │── profiles/              # User profiles
-│   │── schema/                # Data schemas
+├── data/                         # Data management
+│   ├── ingest.py                 # Data ingestion
+│   ├── process_dataset.py        # Dataset processing
+│   ├── processed/                # Processed data
+│   ├── profiles/                 # User profiles
+│   └── schema/                   # Data schemas
 │
-├── training/                  # Model training & fine-tuning
-│   │── dataset/               # Real dataset
-│   │   │── dataset.json       # 27,000+ real phone products
-│   │── prepare_data.py        # E-commerce data preparation & normalization
-│   │── finetune.py           # Model fine-tuning với PEFT/LoRA
-│   │── evaluate.py           # Comprehensive model evaluation
-│   │── checkpoints/          # Trained model checkpoints
+├── training/                     # Model training & fine-tuning
+│   ├── dataset/                  # Real dataset
+│   │   └── dataset.json          # 27,000+ real phone products
+│   ├── prepare_data.py           # Data preparation
+│   ├── finetune.py               # Model fine-tuning
+│   ├── evaluate.py               # Model evaluation
+│   └── training_pipeline.py      # Training pipeline
 │
-├── utils/                     # Utilities
-│   │── logger.py              # Logging utilities
-│   │── helpers.py             # Helper functions
-│
-└── tests/                     # Unit tests
-    │── test_router.py
-    │── test_rag_model.py
-    │── test_interaction_model.py
-    │── test_api_model.py
-    │── test_personalization.py
+└── utils/                        # Utilities
+    ├── logger.py                 # Logging utilities
+    └── helpers.py                # Helper functions
 ```
 
-## 🛠️ Cài đặt
+## Cài đặt
 
 ### 1. Clone repository
 ```bash
@@ -151,7 +189,7 @@ python init_data.py
 python app.py
 ```
 
-## 📦 Requirements
+## Requirements
 
 ### Các file requirements
 
@@ -185,7 +223,7 @@ python app.py
 | requirements.txt | ~2GB | 5-10 phút | Full features |
 | requirements-dev.txt | ~2.5GB | 8-15 phút | Full + Dev tools |
 
-## 🔧 Cấu hình
+## Cấu hình
 
 ### API Keys (Miễn phí)
 - **Gemini API**: Lấy từ [Google AI Studio](https://makersuite.google.com/app/apikey)
@@ -211,7 +249,7 @@ ENABLE_RECOMMENDATIONS=true
 ENABLE_RL_LEARNING=true
 ```
 
-## 🚀 Sử dụng
+## Sử dụng
 
 ### API Endpoints
 
@@ -325,7 +363,7 @@ async def main():
 asyncio.run(main())
 ```
 
-## 🎯 Tính năng nâng cao
+## Tính năng nâng cao
 
 ### 1. Cá nhân hóa người dùng
 - Học hỏi từ lịch sử mua hàng
@@ -368,7 +406,7 @@ asyncio.run(main())
 - **Synthetic Data Generation**: Tăng cường training data với variations
 - **Continuous Improvement**: Model retraining từ conversation data
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Chạy tất cả tests
@@ -381,7 +419,7 @@ pytest tests/test_router.py
 pytest --cov=core tests/
 ```
 
-## 📊 Monitoring
+## Monitoring
 
 ### Health Check
 ```bash
@@ -471,19 +509,11 @@ curl http://localhost:8000/dashboard
 curl http://localhost:8000/traces
 ```
 
-## 📋 Postman Testing
+## Testing với Postman
 
-Xem file `DATASET_AND_POSTMAN_GUIDE.md` để có hướng dẫn chi tiết về testing với Postman, bao gồm:
+### Test Cases với Dataset Thực Tế
 
-- **10+ test cases** với dataset thực tế
-- **Product search** với OnePlus, Samsung, Apple, Xiaomi, etc.
-- **Order tracking** và API integration
-- **Personalization testing** với user preferences
-- **Hybrid Orchestrator testing** với rule-based vs ML-based routing
-- **Performance testing** với cache và concurrent requests
-
-### Quick Postman Tests
-
+#### 1. **Product Search Tests**
 ```bash
 # Test OnePlus từ dataset thực tế
 curl -X POST http://localhost:8000/ask \
@@ -499,9 +529,85 @@ curl -X POST http://localhost:8000/ask \
 curl -X POST http://localhost:8000/ask \
   -H "Content-Type: application/json" \
   -d '{"message": "Nothing Phone giá rẻ", "user_id": "user123"}'
+
+# Test Apple iPhone
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"message": "iPhone 15 Pro Max 256GB", "user_id": "user123"}'
 ```
 
-## 🔄 Development
+#### 2. **Conversation Tests**
+```bash
+# Test hội thoại chung
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Xin chào, bạn có thể giúp tôi không?", "user_id": "user123"}'
+
+# Test tư vấn sản phẩm
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Tôi cần điện thoại chụp ảnh đẹp", "user_id": "user123"}'
+```
+
+#### 3. **API Integration Tests**
+```bash
+# Test tracking đơn hàng
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Đơn hàng #1234 đang ở đâu?", "user_id": "user123"}'
+
+# Test thanh toán
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Tôi muốn thanh toán đơn hàng", "user_id": "user123"}'
+```
+
+#### 4. **Performance Tests**
+```bash
+# Test health check
+curl http://localhost:8000/health
+
+# Test metrics
+curl http://localhost:8000/metrics
+
+# Test dashboard
+curl http://localhost:8000/dashboard
+```
+
+### Postman Collection
+
+Tạo Postman collection với các request sau:
+
+1. **Environment Variables**:
+   - `base_url`: `http://localhost:8000`
+   - `user_id`: `user123`
+   - `session_id`: `session001`
+
+2. **Request Templates**:
+   ```json
+   {
+     "message": "{{message}}",
+     "user_id": "{{user_id}}",
+     "session_id": "{{session_id}}",
+     "context": {}
+   }
+   ```
+
+3. **Test Scripts** (trong Postman Tests tab):
+   ```javascript
+   pm.test("Status code is 200", function () {
+       pm.response.to.have.status(200);
+   });
+   
+   pm.test("Response has required fields", function () {
+       const jsonData = pm.response.json();
+       pm.expect(jsonData).to.have.property('response');
+       pm.expect(jsonData).to.have.property('intent');
+       pm.expect(jsonData).to.have.property('confidence');
+   });
+   ```
+
+## Development
 
 ### Code Style
 ```bash
@@ -521,7 +627,7 @@ pip install pre-commit
 pre-commit install
 ```
 
-## 📈 Performance
+## Performance
 
 ### Caching
 - Response caching giảm 80% thời gian phản hồi
@@ -534,30 +640,105 @@ pre-commit install
 - Database sharding
 - CDN cho static assets
 
-## 🤝 Contributing
+## FAQ
+
+### Q: Làm thế nào để thay đổi model LLM?
+A: Cập nhật biến môi trường `MODEL_LOADER_BACKEND` trong file `.env`:
+```bash
+MODEL_LOADER_BACKEND=gemini  # hoặc groq, ollama, openai
+```
+
+### Q: Làm thế nào để thêm dataset sản phẩm mới?
+A: Thay thế file `training/dataset/dataset.json` và chạy:
+```bash
+python init_data.py
+```
+
+### Q: Làm thế nào để bật/tắt personalization?
+A: Cập nhật trong file `.env`:
+```bash
+ENABLE_PERSONALIZATION=true
+ENABLE_RECOMMENDATIONS=true
+```
+
+### Q: Làm thế nào để monitor hiệu suất?
+A: Sử dụng các endpoint:
+- `/health` - Health check
+- `/metrics` - Metrics chi tiết
+- `/dashboard` - Dashboard tổng quan
+
+### Q: Làm thế nào để scale hệ thống?
+A: Sử dụng load balancer và multiple instances với Redis cluster.
+
+## Roadmap
+
+### Phase 1: Core Features ✅
+- [x] Hybrid Orchestrator
+- [x] RAG System với Pinecone
+- [x] Multi-model support
+- [x] Basic caching
+
+### Phase 2: Advanced Features ✅
+- [x] Personalization system
+- [x] API integration
+- [x] Monitoring & observability
+- [x] Training pipeline
+
+### Phase 3: Production Ready 🔄
+- [ ] Docker containerization
+- [ ] Kubernetes deployment
+- [ ] Advanced security
+- [ ] Rate limiting
+
+### Phase 4: Enterprise Features 📋
+- [ ] Multi-tenant support
+- [ ] Advanced analytics
+- [ ] A/B testing
+- [ ] Custom model training
+
+## Contributing
+
+Chúng tôi hoan nghênh mọi đóng góp! Vui lòng:
 
 1. Fork repository
-2. Tạo feature branch
-3. Commit changes
-4. Push to branch
+2. Tạo feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to branch (`git push origin feature/AmazingFeature`)
 5. Tạo Pull Request
 
-## 📄 License
+### Development Guidelines
+- Tuân thủ PEP 8 style guide
+- Viết test cases cho code mới
+- Cập nhật documentation
+- Sử dụng conventional commits
 
-MIT License - xem file LICENSE để biết thêm chi tiết.
+## License
 
-## 🆘 Support
+Distributed under the MIT License. See `LICENSE` for more information.
 
-- Issues: [GitHub Issues](https://github.com/your-repo/issues)
-- Discussions: [GitHub Discussions](https://github.com/your-repo/discussions)
-- Email: support@your-domain.com
+## Support & Contact
 
-## 🙏 Acknowledgments
+- **Email**: support@ai-agent.com
+- **Issues**: [GitHub Issues](https://github.com/your-repo/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/your-repo/discussions)
+- **Documentation**: [Wiki](https://github.com/your-repo/wiki)
 
-- Google Gemini API
-- Groq API
-- Ollama
-- FastAPI
-- Pydantic
-- Redis
-- Pinecone (Cloud Vector Database)
+## Acknowledgments
+
+- [Google Gemini API](https://ai.google.dev/) - LLM capabilities
+- [Groq API](https://groq.com/) - Fast inference
+- [Ollama](https://ollama.ai/) - Local LLM hosting
+- [FastAPI](https://fastapi.tiangolo.com/) - Web framework
+- [Pinecone](https://www.pinecone.io/) - Vector database
+- [Redis](https://redis.io/) - Caching layer
+- [Pydantic](https://pydantic.dev/) - Data validation
+
+---
+
+<div align="center">
+
+**Nếu dự án này hữu ích, hãy cho chúng tôi một star!**
+
+Made with ❤️ by AI Agent Team
+
+</div>
