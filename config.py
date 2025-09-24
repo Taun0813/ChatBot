@@ -33,19 +33,19 @@ class Settings(BaseSettings):
     pinecone_namespace: str = "default"
 
     # Backends
-    model_loader_backend: str = "gemini"
-    vectorstore_backend: str = "pinecone"
+    model_loader_backend: str = Field("gemini", alias="MODEL_LOADER_BACKEND")
+    vectorstore_backend: str = Field("pinecone", alias="VECTORSTORE_BACKEND")
 
     # Model Configuration
-    model_name: str = "gemini-1.5-flash"
-    max_tokens: int = 2048
-    temperature: float = 0.7
-    top_p: float = 0.9
+    model_name: str = Field("gemini-1.5-flash", alias="MODEL_NAME")
+    max_tokens: int = Field(2048, alias="MAX_TOKENS")
+    temperature: float = Field(0.7, alias="TEMPERATURE")
+    top_p: float = Field(0.9, alias="TOP_P")
 
     # Personalization
-    enable_personalization: bool = True
-    enable_recommendations: bool = True
-    enable_rl_learning: bool = True
+    enable_personalization: bool = Field(True, alias="ENABLE_PERSONALIZATION")
+    enable_recommendations: bool = Field(True, alias="ENABLE_RECOMMENDATIONS")
+    enable_rl_learning: bool = Field(True, alias="ENABLE_RL_LEARNING")
 
     # External services
     order_service_url: str = "http://localhost:8081/api/orders"
@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     product_service_api_key: Optional[str] = None
 
     # API timeout
-    api_timeout: int = 30
+    api_timeout: int = Field(30, alias="API_TIMEOUT")
 
     # Multi-model + Cache
     enable_multi_model: bool = True

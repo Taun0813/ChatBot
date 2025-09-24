@@ -189,6 +189,25 @@ python init_data.py
 python app.py
 ```
 
+## Training & Fine-tuning (Tùy chọn)
+
+### Chuẩn bị dữ liệu training
+```bash
+python training/prepare_data.py
+```
+
+### Fine-tuning model
+```bash
+python training/finetune.py
+```
+
+### Đánh giá model
+```bash
+python training/evaluate.py
+```
+
+**Lưu ý**: Training chỉ cần thiết khi muốn cải thiện model. Hệ thống hoạt động bình thường mà không cần training.
+
 ## Requirements
 
 ### Các file requirements

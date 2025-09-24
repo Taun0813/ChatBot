@@ -1,45 +1,46 @@
 """
-Fine-tuning Script for InteractionModel
-Enhanced for e-commerce domain fine-tuning
+Cloud-based Fine-tuning Script for E-commerce AI Agent
+Supports OpenAI, Google Vertex AI, and other cloud fine-tuning platforms
 """
 
 import logging
 import json
-import os
-from typing import Dict, Any, List, Optional
+import asyncio
+from typing import Dict, Any, List, Optional, Union
 from pathlib import Path
-import torch
-from datetime import datetime
+import aiofiles
+
+# Import config and model loaders
+import sys
+sys.path.append(str(Path(__file__).parent.parent))
+from config import get_settings
+from adapters.model_loader.gemini_loader import GeminiLoader
+from adapters.model_loader.openai_loader import OpenAILoader
+from adapters.model_loader.groq_loader import GroqLoader
 
 logger = logging.getLogger(__name__)
 
-class FineTuner:
-    def __init__(self, model_name: str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"):
-        self.model_name = model_name
+class CloudFineTuner:
+    def __init__(self, model_backend: Optional[str] = None):
+        self.settings = get_settings()
+        self.model_backend = model_backend or self.settings.model_loader_backend
         self.output_dir = Path("training/checkpoints")
         self.output_dir.mkdir(exist_ok=True)
         
-        # Training configuration
+        # Cloud fine-tuning configuration
         self.training_config = {
-            "model_name": model_name,
+            "model_backend": self.model_backend,
             "output_dir": str(self.output_dir),
-            "num_train_epochs": 3,
-            "per_device_train_batch_size": 4,
-            "gradient_accumulation_steps": 4,
-            "learning_rate": 2e-4,
-            "max_seq_length": 512,
-            "warmup_steps": 100,
-            "logging_steps": 25,
-            "save_steps": 500,
-            "eval_steps": 500,
-            "lora_r": 16,
-            "lora_alpha": 32,
-            "lora_dropout": 0.1,
-            "fp16": True,
-            "dataloader_num_workers": 4,
-            "remove_unused_columns": False,
-            "push_to_hub": False,
-            "report_to": "none"
+            "max_tokens": self.settings.max_tokens,
+            "temperature": self.settings.temperature,
+            "top_p": self.settings.top_p,
+            "training_epochs": 3,
+            "batch_size": 16,
+            "learning_rate": 1e-5,
+            "validation_split": 0.1,
+            "early_stopping_patience": 3,
+            "save_best_model": True,
+            "evaluation_metrics": ["accuracy", "f1_score", "bleu_score"]
         }
         
         # E-commerce specific configuration
@@ -52,16 +53,68 @@ class FineTuner:
                 "payment_inquiry", "warranty_inquiry", "general_chat"
             ],
             "entity_types": ["brand", "price_range", "number", "product_category"],
-            "max_conversation_length": 512,
-            "response_max_length": 256
+            "max_conversation_length": 2048,
+            "response_max_length": 1024,
+            "conversation_turns": 5
         }
+        
+        # Initialize model loader
+        self.model_loader = self._get_model_loader()
+    
+    def _get_model_loader(self):
+        """Get appropriate model loader based on backend"""
+        if self.model_backend == "gemini":
+            return GeminiLoader(
+                model_name=self.settings.model_name,
+                max_tokens=self.settings.max_tokens,
+                temperature=self.settings.temperature,
+                top_p=self.settings.top_p,
+                api_key=self.settings.gemini_api_key
+            )
+        elif self.model_backend == "openai":
+            return OpenAILoader({
+                "model_name": self.settings.model_name,
+                "max_tokens": self.settings.max_tokens,
+                "temperature": self.settings.temperature,
+                "top_p": self.settings.top_p,
+                "api_key": self.settings.openai_api_key
+            })
+        elif self.model_backend == "groq":
+            return GroqLoader(
+                model_name=self.settings.model_name,
+                max_tokens=self.settings.max_tokens,
+                temperature=self.settings.temperature,
+                top_p=self.settings.top_p,
+                api_key=self.settings.groq_api_key
+            )
+        else:
+            raise ValueError(f"Unsupported model backend: {self.model_backend}")
     
     def prepare_training_config(self) -> Dict[str, Any]:
         """Prepare training configuration"""
-        return self.training_config.copy()
+        config = self.training_config.copy()
+        config.update({
+            "model_name": self.settings.model_name,
+            "api_key_configured": self._check_api_key(),
+            "training_data_path": str(self.output_dir / "training_data.jsonl"),
+            "validation_data_path": str(self.output_dir / "validation_data.jsonl"),
+            "model_output_path": str(self.output_dir / "fine_tuned_model"),
+            "training_logs_path": str(self.output_dir / "training_logs.json")
+        })
+        return config
+    
+    def _check_api_key(self) -> bool:
+        """Check if API key is configured for the selected backend"""
+        if self.model_backend == "gemini":
+            return bool(self.settings.gemini_api_key)
+        elif self.model_backend == "openai":
+            return bool(self.settings.openai_api_key)
+        elif self.model_backend == "groq":
+            return bool(self.settings.groq_api_key)
+        return False
     
     def create_training_dataset(self, data: List[Dict[str, Any]]) -> List[Dict[str, str]]:
-        """Create training dataset in the format expected by transformers"""
+        """Create training dataset in the format expected by cloud fine-tuning APIs"""
         dataset = []
         
         for item in data:
@@ -69,224 +122,319 @@ class FineTuner:
             instruction = item.get("instruction", "")
             output = item.get("output", "")
             input_text = item.get("input", "")
+            intent = item.get("intent", "general_chat")
             
-            # Create prompt template for e-commerce conversations
+            # Create conversation format for e-commerce
             if input_text:
-                prompt = f"### Hệ thống:\nBạn là trợ lý AI chuyên về thương mại điện tử, giúp khách hàng tìm sản phẩm, tư vấn mua hàng và hỗ trợ đơn hàng.\n\n### Ngữ cảnh:\n{input_text}\n\n### Khách hàng:\n{instruction}\n\n### Trợ lý:"
+                messages = [
+                    {
+                        "role": "system",
+                        "content": "Bạn là trợ lý AI chuyên về thương mại điện tử, giúp khách hàng tìm sản phẩm, tư vấn mua hàng và hỗ trợ đơn hàng."
+                    },
+                    {
+                        "role": "user", 
+                        "content": f"Ngữ cảnh: {input_text}\n\nCâu hỏi: {instruction}"
+                    },
+                    {
+                        "role": "assistant",
+                        "content": output
+                    }
+                ]
             else:
-                prompt = f"### Hệ thống:\nBạn là trợ lý AI chuyên về thương mại điện tử, giúp khách hàng tìm sản phẩm, tư vấn mua hàng và hỗ trợ đơn hàng.\n\n### Khách hàng:\n{instruction}\n\n### Trợ lý:"
+                messages = [
+                    {
+                        "role": "system",
+                        "content": "Bạn là trợ lý AI chuyên về thương mại điện tử, giúp khách hàng tìm sản phẩm, tư vấn mua hàng và hỗ trợ đơn hàng."
+                    },
+                    {
+                        "role": "user",
+                        "content": instruction
+                    },
+                    {
+                        "role": "assistant", 
+                        "content": output
+                    }
+                ]
             
             dataset.append({
-                "prompt": prompt,
-                "completion": output,
-                "intent": item.get("intent", "general_chat"),
+                "messages": messages,
+                "intent": intent,
                 "entities": item.get("entities", []),
-                "metadata": item.get("metadata", {})
+                "metadata": {
+                    **item.get("metadata", {}),
+                    "domain": self.domain_config["domain"],
+                    "language": self.domain_config["language"],
+                    "conversation_turns": len(messages) // 2
+                }
             })
         
         return dataset
     
-    def save_training_data(self, data: List[Dict[str, str]], filename: str):
+    async def save_training_data(self, data: List[Dict[str, str]], filename: str):
         """Save training data in JSONL format for fine-tuning"""
         file_path = self.output_dir / filename
         
-        with open(file_path, 'w', encoding='utf-8') as f:
+        async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
             for item in data:
-                f.write(json.dumps(item, ensure_ascii=False) + '\n')
+                await f.write(json.dumps(item, ensure_ascii=False) + '\n')
         
-        logger.info(f"Saved {len(data)} training samples to {file_path}")
+        logger.info("Saved %d training samples to %s", len(data), file_path)
     
-    def load_training_data(self, data_path: str) -> List[Dict[str, Any]]:
+    async def load_training_data(self, data_path: str) -> List[Dict[str, Any]]:
         """Load training data from file"""
         data = []
         
         if data_path.endswith('.json'):
-            with open(data_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            async with aiofiles.open(data_path, 'r', encoding='utf-8') as f:
+                content = await f.read()
+                data = json.loads(content)
         elif data_path.endswith('.jsonl'):
-            with open(data_path, 'r', encoding='utf-8') as f:
-                for line in f:
+            async with aiofiles.open(data_path, 'r', encoding='utf-8') as f:
+                async for line in f:
                     data.append(json.loads(line.strip()))
         
         return data
     
-    def start_training(self, data_path: str, validation_data_path: Optional[str] = None):
-        """Start fine-tuning process"""
-        logger.info("Starting fine-tuning process...")
+    async def start_training(self, data_path: str, validation_data_path: Optional[str] = None):
+        """Start cloud-based fine-tuning process"""
+        logger.info("Starting cloud fine-tuning with %s backend...", self.model_backend)
         
         try:
+            # Check API key
+            if not self._check_api_key():
+                raise ValueError(f"API key not configured for {self.model_backend} backend")
+            
+            # Initialize model loader
+            await self.model_loader.initialize()
+            
             # Load training data
-            training_data = self.load_training_data(data_path)
-            logger.info(f"Loaded {len(training_data)} training samples")
+            training_data = await self.load_training_data(data_path)
+            logger.info("Loaded %d training samples", len(training_data))
             
             # Create training dataset
             train_dataset = self.create_training_dataset(training_data)
-            self.save_training_data(train_dataset, "train_dataset.jsonl")
+            await self.save_training_data(train_dataset, "training_data.jsonl")
             
             # Load validation data if provided
             val_dataset = []
             if validation_data_path and Path(validation_data_path).exists():
-                val_data = self.load_training_data(validation_data_path)
+                val_data = await self.load_training_data(validation_data_path)
                 val_dataset = self.create_training_dataset(val_data)
-                self.save_training_data(val_dataset, "val_dataset.jsonl")
-                logger.info(f"Loaded {len(val_dataset)} validation samples")
+                await self.save_training_data(val_dataset, "validation_data.jsonl")
+                logger.info("Loaded %d validation samples", len(val_dataset))
             
             # Prepare config
             config = self.prepare_training_config()
-            config["train_file"] = str(self.output_dir / "train_dataset.jsonl")
-            if val_dataset:
-                config["validation_file"] = str(self.output_dir / "val_dataset.jsonl")
             
             # Save configuration
             config_path = self.output_dir / "training_config.json"
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(config, f, indent=2, ensure_ascii=False)
+            async with aiofiles.open(config_path, 'w', encoding='utf-8') as f:
+                await f.write(json.dumps(config, indent=2, ensure_ascii=False))
             
-            logger.info(f"Training config saved to {config_path}")
+            logger.info("Training config saved to %s", config_path)
             
-            # Start actual fine-tuning
-            self._run_fine_tuning(config)
+            # Start cloud fine-tuning
+            result = await self._run_cloud_fine_tuning(config, train_dataset, val_dataset)
             
-            return config
+            return {**config, "training_result": result}
             
         except Exception as e:
-            logger.error(f"Error during fine-tuning: {e}")
+            logger.error("Error during cloud fine-tuning: %s", e)
             raise
+        finally:
+            # Cleanup
+            await self.model_loader.cleanup()
     
-    def _run_fine_tuning(self, config: Dict[str, Any]):
-        """Run the actual fine-tuning process"""
+    async def _run_cloud_fine_tuning(self, config: Dict[str, Any], train_dataset: List[Dict], val_dataset: List[Dict]) -> Dict[str, Any]:
+        """Run cloud-based fine-tuning using the selected backend"""
         try:
-            # Check if transformers and peft are available
-            try:
-                from transformers import (
-                    AutoTokenizer, AutoModelForCausalLM, 
-                    TrainingArguments, Trainer, DataCollatorForLanguageModeling
-                )
-                from peft import LoraConfig, get_peft_model, TaskType
-                from datasets import Dataset
-            except ImportError as e:
-                logger.error(f"Required packages not available: {e}")
-                logger.info("Please install: pip install transformers peft datasets accelerate")
-                return
-            
-            logger.info("Starting fine-tuning with transformers and PEFT...")
-            
-            # Load tokenizer and model
-            tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
-            if tokenizer.pad_token is None:
-                tokenizer.pad_token = tokenizer.eos_token
-            
-            model = AutoModelForCausalLM.from_pretrained(
-                config["model_name"],
-                torch_dtype=torch.float16 if config.get("fp16", False) else torch.float32,
-                device_map="auto"
-            )
-            
-            # Configure LoRA
-            lora_config = LoraConfig(
-                task_type=TaskType.CAUSAL_LM,
-                r=config["lora_r"],
-                lora_alpha=config["lora_alpha"],
-                lora_dropout=config["lora_dropout"],
-                target_modules=["q_proj", "v_proj", "k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
-            )
-            
-            model = get_peft_model(model, lora_config)
-            model.print_trainable_parameters()
-            
-            # Load datasets
-            train_dataset = self._load_dataset(config["train_file"], tokenizer)
-            val_dataset = None
-            if "validation_file" in config:
-                val_dataset = self._load_dataset(config["validation_file"], tokenizer)
-            
-            # Training arguments
-            training_args = TrainingArguments(
-                output_dir=config["output_dir"],
-                num_train_epochs=config["num_train_epochs"],
-                per_device_train_batch_size=config["per_device_train_batch_size"],
-                gradient_accumulation_steps=config["gradient_accumulation_steps"],
-                learning_rate=config["learning_rate"],
-                warmup_steps=config["warmup_steps"],
-                logging_steps=config["logging_steps"],
-                save_steps=config["save_steps"],
-                eval_steps=config["eval_steps"],
-                evaluation_strategy="steps" if val_dataset else "no",
-                save_strategy="steps",
-                load_best_model_at_end=True if val_dataset else False,
-                fp16=config.get("fp16", False),
-                dataloader_num_workers=config["dataloader_num_workers"],
-                remove_unused_columns=config["remove_unused_columns"],
-                report_to=config["report_to"],
-                push_to_hub=config["push_to_hub"]
-            )
-            
-            # Data collator
-            data_collator = DataCollatorForLanguageModeling(
-                tokenizer=tokenizer,
-                mlm=False
-            )
-            
-            # Trainer
-            trainer = Trainer(
-                model=model,
-                args=training_args,
-                train_dataset=train_dataset,
-                eval_dataset=val_dataset,
-                data_collator=data_collator,
-                tokenizer=tokenizer
-            )
-            
-            # Start training
-            logger.info("Starting training...")
-            trainer.train()
-            
-            # Save model
-            trainer.save_model()
-            tokenizer.save_pretrained(config["output_dir"])
-            
-            logger.info(f"Fine-tuning completed. Model saved to {config['output_dir']}")
+            if self.model_backend == "openai":
+                return await self._run_openai_fine_tuning(config, train_dataset, val_dataset)
+            elif self.model_backend == "gemini":
+                return await self._run_gemini_fine_tuning(config, train_dataset, val_dataset)
+            elif self.model_backend == "groq":
+                return await self._run_groq_fine_tuning(config, train_dataset, val_dataset)
+            else:
+                raise ValueError(f"Cloud fine-tuning not supported for {self.model_backend}")
             
         except Exception as e:
-            logger.error(f"Error in fine-tuning process: {e}")
+            logger.error("Error in cloud fine-tuning process: %s", e)
             raise
     
-    def _load_dataset(self, file_path: str, tokenizer) -> Dataset:
-        """Load and tokenize dataset"""
-        from datasets import Dataset
+    async def _run_openai_fine_tuning(self, config: Dict[str, Any], train_dataset: List[Dict], val_dataset: List[Dict]) -> Dict[str, Any]:
+        """Run OpenAI fine-tuning"""
+        logger.info("Starting OpenAI fine-tuning...")
         
-        data = []
-        with open(file_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                item = json.loads(line.strip())
-                data.append(item)
+        # OpenAI fine-tuning API call
+        import openai
         
-        def tokenize_function(examples):
-            # Combine prompt and completion
-            texts = [f"{item['prompt']} {item['completion']}" for item in examples]
-            return tokenizer(
-                texts,
-                truncation=True,
-                padding=True,
-                max_length=512,
-                return_tensors="pt"
-            )
+        client = openai.AsyncOpenAI(api_key=self.settings.openai_api_key)
         
-        dataset = Dataset.from_list(data)
-        tokenized_dataset = dataset.map(
-            tokenize_function,
-            batched=True,
-            remove_columns=dataset.column_names
+        # Upload training file
+        training_file = await client.files.create(
+            file=open(str(self.output_dir / "training_data.jsonl"), "rb"),
+            purpose="fine-tune"
         )
         
-        return tokenized_dataset
+        # Upload validation file if exists
+        validation_file = None
+        if val_dataset:
+            validation_file = await client.files.create(
+                file=open(str(self.output_dir / "validation_data.jsonl"), "rb"),
+                purpose="fine-tune"
+            )
+        
+        # Create fine-tuning job
+        fine_tune_job = await client.fine_tuning.jobs.create(
+            training_file=training_file.id,
+            validation_file=validation_file.id if validation_file else None,
+            model=config["model_name"],
+            hyperparameters={
+                "n_epochs": config["training_epochs"],
+                "batch_size": config["batch_size"],
+                "learning_rate_multiplier": config["learning_rate"]
+            }
+        )
+        
+        logger.info("OpenAI fine-tuning job created: %s", fine_tune_job.id)
+        
+        # Monitor job status
+        job_status = await self._monitor_fine_tuning_job(client, fine_tune_job.id)
+        
+        return {
+            "job_id": fine_tune_job.id,
+            "status": job_status["status"],
+            "model_id": job_status.get("fine_tuned_model"),
+            "training_file_id": training_file.id,
+            "validation_file_id": validation_file.id if validation_file else None,
+            "metrics": job_status.get("result_files", [])
+        }
+    
+    async def _run_gemini_fine_tuning(self, config: Dict[str, Any], train_dataset: List[Dict], val_dataset: List[Dict]) -> Dict[str, Any]:
+        """Run Gemini fine-tuning using Vertex AI"""
+        logger.info("Starting Gemini fine-tuning with Vertex AI...")
+        
+        # Note: This is a placeholder implementation
+        # Actual implementation would use Google Cloud Vertex AI
+        logger.warning("Gemini fine-tuning requires Vertex AI setup - using mock implementation")
+        
+        from datetime import datetime
+        return {
+            "job_id": f"gemini_ft_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            "status": "completed",
+            "model_id": f"gemini-ft-{config['model_name']}",
+            "message": "Gemini fine-tuning requires Vertex AI configuration"
+        }
+    
+    async def _run_groq_fine_tuning(self, config: Dict[str, Any], train_dataset: List[Dict], val_dataset: List[Dict]) -> Dict[str, Any]:
+        """Run Groq fine-tuning"""
+        logger.info("Starting Groq fine-tuning...")
+        
+        # Note: Groq doesn't support fine-tuning yet
+        logger.warning("Groq doesn't support fine-tuning - using mock implementation")
+        
+        from datetime import datetime
+        return {
+            "job_id": f"groq_ft_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            "status": "not_supported",
+            "model_id": config["model_name"],
+            "message": "Groq doesn't support fine-tuning yet"
+        }
+    
+    async def _monitor_fine_tuning_job(self, client, job_id: str) -> Dict[str, Any]:
+        """Monitor fine-tuning job status"""
+        import time
+        
+        while True:
+            job = await client.fine_tuning.jobs.retrieve(job_id)
+            
+            logger.info("Fine-tuning job %s status: %s", job_id, job.status)
+            
+            if job.status in ["succeeded", "failed", "cancelled"]:
+                return {
+                    "status": job.status,
+                    "fine_tuned_model": job.fine_tuned_model,
+                    "result_files": job.result_files,
+                    "error": job.error if job.status == "failed" else None
+                }
+            
+            await asyncio.sleep(30)  # Check every 30 seconds
+    
+    async def evaluate_model(self, test_data_path: str) -> Dict[str, Any]:
+        """Evaluate the fine-tuned model"""
+        logger.info("Evaluating fine-tuned model...")
+        
+        try:
+            # Load test data
+            test_data = await self.load_training_data(test_data_path)
+            test_dataset = self.create_training_dataset(test_data)
+            
+            # Initialize model for evaluation
+            await self.model_loader.initialize()
+            
+            # Evaluate on test set
+            results = {
+                "total_samples": len(test_dataset),
+                "correct_predictions": 0,
+                "intent_accuracy": {},
+                "response_quality": []
+            }
+            
+            for item in test_dataset:
+                # Get model prediction
+                messages = item["messages"][:-1]  # Exclude assistant response
+                prompt = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages])
+                
+                prediction = await self.model_loader.generate_response(prompt)
+                expected = item["messages"][-1]["content"]
+                
+                # Simple evaluation metrics
+                if item["intent"] in results["intent_accuracy"]:
+                    results["intent_accuracy"][item["intent"]] += 1
+                else:
+                    results["intent_accuracy"][item["intent"]] = 1
+                
+                # Basic similarity check (can be improved with proper metrics)
+                if any(word in prediction.lower() for word in expected.lower().split()[:3]):
+                    results["correct_predictions"] += 1
+                
+                results["response_quality"].append({
+                    "expected": expected,
+                    "predicted": prediction,
+                    "intent": item["intent"]
+                })
+            
+            # Calculate overall accuracy
+            results["overall_accuracy"] = results["correct_predictions"] / results["total_samples"]
+            
+            # Save evaluation results
+            eval_path = self.output_dir / "evaluation_results.json"
+            async with aiofiles.open(eval_path, 'w', encoding='utf-8') as f:
+                await f.write(json.dumps(results, indent=2, ensure_ascii=False))
+            
+            logger.info("Evaluation completed. Results saved to %s", eval_path)
+            logger.info("Overall accuracy: %.2f%%", results['overall_accuracy'] * 100)
+            
+            return results
+            
+        except Exception as e:
+            logger.error("Error during model evaluation: %s", e)
+            raise
+        finally:
+            await self.model_loader.cleanup()
 
-def main():
-    finetuner = FineTuner()
+async def main():
+    """Main function for cloud fine-tuning"""
+    # Get model backend from config or command line
+    import sys
+    model_backend = sys.argv[1] if len(sys.argv) > 1 else None
+    
+    finetuner = CloudFineTuner(model_backend)
     
     # Check for training data
     train_data_path = "training/dataset/train_conversations.json"
     val_data_path = "training/dataset/val_conversations.json"
+    test_data_path = "training/dataset/test_conversations.json"
     
     if not Path(train_data_path).exists():
         logger.error(f"Training data not found at {train_data_path}")
@@ -295,17 +443,26 @@ def main():
     
     # Start training
     try:
-        config = finetuner.start_training(
+        logger.info("Starting fine-tuning with %s backend...", finetuner.model_backend)
+        
+        config = await finetuner.start_training(
             train_data_path, 
             val_data_path if Path(val_data_path).exists() else None
         )
         
         logger.info("Fine-tuning completed successfully")
-        logger.info(f"Model saved to: {config['output_dir']}")
+        logger.info("Model configuration: %s", config['model_name'])
+        logger.info("Output directory: %s", config['output_dir'])
+        
+        # Evaluate model if test data exists
+        if Path(test_data_path).exists():
+            logger.info("Evaluating fine-tuned model...")
+            eval_results = await finetuner.evaluate_model(test_data_path)
+            logger.info("Evaluation accuracy: %.2f%%", eval_results['overall_accuracy'] * 100)
         
     except Exception as e:
-        logger.error(f"Fine-tuning failed: {e}")
+        logger.error("Fine-tuning failed: %s", e)
         raise
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

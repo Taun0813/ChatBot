@@ -193,6 +193,21 @@ async def ask(
         
         logger.info(f"Generated response: {response['response'][:100]}...")
         
+        # Add model info to response metadata
+        from config import get_settings
+        settings = get_settings()
+        
+        if "metadata" not in response:
+            response["metadata"] = {}
+        
+        response["metadata"]["model_info"] = {
+            "backend": settings.model_loader_backend,
+            "model_name": settings.model_name,
+            "max_tokens": settings.max_tokens,
+            "temperature": settings.temperature,
+            "top_p": settings.top_p
+        }
+        
         # Collect conversation for training (async)
         try:
             from training.training_pipeline import get_training_pipeline
@@ -567,6 +582,38 @@ async def test_endpoint():
         "message": "Test endpoint working",
         "timestamp": time.time()
     }
+
+@app.get("/model-info")
+async def get_model_info():
+    """Get current model information"""
+    try:
+        from config import get_settings
+        settings = get_settings()
+        
+        return {
+            "status": "success",
+            "model_info": {
+                "backend": settings.model_loader_backend,
+                "model_name": settings.model_name,
+                "max_tokens": settings.max_tokens,
+                "temperature": settings.temperature,
+                "top_p": settings.top_p,
+                "api_timeout": settings.api_timeout
+            },
+            "features": {
+                "personalization": settings.enable_personalization,
+                "recommendations": settings.enable_recommendations,
+                "rl_learning": settings.enable_rl_learning
+            },
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        logger.error(f"Error getting model info: {e}")
+        return {
+            "status": "error",
+            "message": f"Error getting model info: {str(e)}",
+            "timestamp": time.time()
+        }
 
 if __name__ == "__main__":
     settings = get_settings()
