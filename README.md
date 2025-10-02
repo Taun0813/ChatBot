@@ -1,25 +1,25 @@
 # AI Agent System - Hybrid Orchestrator
 
-Hệ thống AI Agent thông minh cho thương mại điện tử với **Hybrid Orchestrator** kết hợp rule-based và ML-based routing, sử dụng dataset thực tế với 27,000+ sản phẩm điện thoại.
+Intelligent AI Agent system for e-commerce with **Hybrid Orchestrator** combining rule-based and ML-based routing, using real dataset with 27,000+ phone products.
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## Tính năng chính
+## Key Features
 
-- **Hybrid Orchestrator**: Kết hợp rule-based + ML-based routing (độ chính xác 85-95%)
-- **Dataset thực tế**: ~900 sản phẩm điện thoại từ OnePlus, Samsung, Apple, Xiaomi, etc.
-- **RAG System**: Tìm kiếm ngữ nghĩa với Pinecone vector database
-- **Hội thoại thông minh**: Tương tác tự nhiên với context-aware routing
-- **API Integration**: Kết nối với microservices (đơn hàng, thanh toán, bảo hành)
-- **Cá nhân hóa**: Học hỏi từ hành vi người dùng và đưa ra gợi ý phù hợp
-- **Multi-model**: Hỗ trợ nhiều LLM (Gemini, Groq, Ollama, OpenAI, Claude)
-- **Caching**: Hệ thống cache thông minh với Redis và Memory cache
-- **Monitoring**: Theo dõi hiệu suất real-time với dashboard chi tiết
-- **Training**: Fine-tune model cho domain e-commerce với data pipeline hoàn chỉnh
+- **Hybrid Orchestrator**: Combines rule-based + ML-based routing (85-95% accuracy)
+- **Real Dataset**: ~900 phone products from OnePlus, Samsung, Apple, Xiaomi, etc.
+- **RAG System**: Semantic search with Pinecone vector database
+- **Smart Conversation**: Natural interaction with context-aware routing
+- **API Integration**: Connect with microservices (orders, payments, warranty)
+- **Personalization**: Learn from user behavior and provide relevant recommendations
+- **Multi-model**: Support multiple LLMs (Gemini, Groq, Ollama, OpenAI, Claude)
+- **Caching**: Smart caching system with Redis and Memory cache
+- **Monitoring**: Real-time performance monitoring with detailed dashboard
+- **Training**: Fine-tune models for e-commerce domain with complete data pipeline
 
-## Kiến trúc hệ thống
+## System Architecture
 
 ### Hybrid Orchestrator Architecture
 ```mermaid
@@ -60,7 +60,7 @@ graph TB
     U --> V[Response to Client]
 ```
 
-## Cấu trúc thư mục
+## Directory Structure
 
 ```
 ai_agent/
@@ -138,7 +138,7 @@ ai_agent/
     └── helpers.py                # Helper functions
 ```
 
-## Cài đặt
+## Installation
 
 ### 1. Clone repository
 ```bash
@@ -146,108 +146,108 @@ git clone <repository-url>
 cd ai_agent
 ```
 
-### 2. Tạo virtual environment
+### 2. Create virtual environment
 ```bash
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
-# hoặc
+# or
 venv\Scripts\activate     # Windows
 ```
 
-### 3. Cài đặt dependencies
+### 3. Install dependencies
 
-#### Tùy chọn 1: Cài đặt đầy đủ (khuyến nghị)
+#### Option 1: Full installation (recommended)
 ```bash
 pip install -r requirements.txt
 ```
 
-#### Tùy chọn 2: Cài đặt tối thiểu (chỉ core features)
+#### Option 2: Minimal installation (core features only)
 ```bash
 pip install fastapi uvicorn pydantic pydantic-settings google-generativeai pinecone-client redis httpx python-dotenv psutil
 ```
 
-#### Tùy chọn 3: Cài đặt cho development
+#### Option 3: Development installation
 ```bash
 pip install -r requirements.txt black isort flake8 mypy pytest pytest-asyncio pytest-cov
 ```
 
-### 4. Cấu hình environment
+### 4. Configure environment
 ```bash
 cp env.example .env
-# Chỉnh sửa .env với API keys của bạn
-# QUAN TRỌNG: Cần có PINECONE_API_KEY để sử dụng vector database
+# Edit .env with your API keys
+# IMPORTANT: PINECONE_API_KEY is required to use vector database
 ```
 
-### 5. Khởi tạo dữ liệu với dataset thực tế
+### 5. Initialize data with real dataset
 ```bash
-# Load 27,000+ sản phẩm điện thoại thực tế vào Pinecone
+# Load 27,000+ real phone products into Pinecone
 python init_data.py
 ```
 
-### 6. Chạy ứng dụng
+### 6. Run application
 ```bash
 python app.py
 ```
 
-## Training & Fine-tuning (Tùy chọn)
+## Training & Fine-tuning (Optional)
 
-### Chuẩn bị dữ liệu training
+### Prepare training data
 ```bash
 python training/prepare_data.py
 ```
 
-### Fine-tuning model
+### Fine-tune model
 ```bash
 python training/finetune.py
 ```
 
-### Đánh giá model
+### Evaluate model
 ```bash
 python training/evaluate.py
 ```
 
-**Lưu ý**: Training chỉ cần thiết khi muốn cải thiện model. Hệ thống hoạt động bình thường mà không cần training.
+**Note**: Training is only necessary when you want to improve the model. The system works normally without training.
 
 ## Requirements
 
-### Các file requirements
+### Requirements files
 
-1. **`requirements.txt`** - Cài đặt đầy đủ (khuyến nghị)
-   - Tất cả AI APIs (Gemini, Groq, Ollama, OpenAI, Claude)
+1. **`requirements.txt`** - Full installation (recommended)
+   - All AI APIs (Gemini, Groq, Ollama, OpenAI, Claude)
    - Vector database (Pinecone cloud only)
    - Caching (Redis, Memory cache)
    - Monitoring & observability
    - Personalization & ML
    - Development tools
 
-2. **`requirements-minimal.txt`** - Cài đặt tối thiểu
-   - Chỉ core features cần thiết
+2. **`requirements-minimal.txt`** - Minimal installation
+   - Only essential core features
    - Free APIs (Gemini, Groq, Ollama)
    - FAISS vector database
    - Redis caching
-   - Kích thước: ~500MB
+   - Size: ~500MB
 
 3. **`requirements-dev.txt`** - Development
-   - Bao gồm tất cả requirements.txt
+   - Includes all requirements.txt
    - Testing tools (pytest, coverage)
    - Code quality (black, flake8, mypy)
    - Debugging tools
    - Documentation tools
 
-### So sánh kích thước cài đặt
+### Installation size comparison
 
-| File | Kích thước | Thời gian cài đặt | Tính năng |
-|------|------------|-------------------|-----------|
-| requirements-minimal.txt | ~500MB | 2-3 phút | Core only |
-| requirements.txt | ~2GB | 5-10 phút | Full features |
-| requirements-dev.txt | ~2.5GB | 8-15 phút | Full + Dev tools |
+| File | Size | Installation Time | Features |
+|------|------|-------------------|----------|
+| requirements-minimal.txt | ~500MB | 2-3 minutes | Core only |
+| requirements.txt | ~2GB | 5-10 minutes | Full features |
+| requirements-dev.txt | ~2.5GB | 8-15 minutes | Full + Dev tools |
 
-## Cấu hình
+## Configuration
 
-### API Keys (Miễn phí)
-- **Gemini API**: Lấy từ [Google AI Studio](https://makersuite.google.com/app/apikey)
-- **Groq API**: Lấy từ [Groq Console](https://console.groq.com/)
-- **Ollama**: Cài đặt local từ [Ollama.ai](https://ollama.ai/)
+### API Keys (Free)
+- **Gemini API**: Get from [Google AI Studio](https://makersuite.google.com/app/apikey)
+- **Groq API**: Get from [Groq Console](https://console.groq.com/)
+- **Ollama**: Install locally from [Ollama.ai](https://ollama.ai/)
 
 ### Environment Variables
 ```bash
@@ -268,7 +268,7 @@ ENABLE_RECOMMENDATIONS=true
 ENABLE_RL_LEARNING=true
 ```
 
-## Sử dụng
+## Usage
 
 ### API Endpoints
 
@@ -277,13 +277,13 @@ ENABLE_RL_LEARNING=true
 curl -X POST "http://localhost:8000/ask" \
   -H "Content-Type: application/json" \
   -d '{
-    "message": "OnePlus dưới 50 triệu",
+    "message": "OnePlus under 50 million",
     "user_id": "user123",
     "session_id": "session001"
   }'
 ```
 
-#### 2. Product Search (từ dataset thực tế)
+#### 2. Product Search (from real dataset)
 ```bash
 curl -X POST "http://localhost:8000/ask" \
   -H "Content-Type: application/json" \
@@ -299,7 +299,7 @@ curl -X POST "http://localhost:8000/ask" \
 curl -X POST "http://localhost:8000/ask" \
   -H "Content-Type: application/json" \
   -d '{
-    "message": "Đơn hàng #1234 đang ở đâu?",
+    "message": "Where is order #1234?",
     "user_id": "user123",
     "session_id": "session001"
   }'
@@ -371,7 +371,7 @@ async def main():
     await router.initialize()
     
     response = await router.process_request(
-        message="Xin chào, tôi cần tư vấn về điện thoại",
+        message="Hello, I need advice about phones",
         user_id="user123"
     )
     
@@ -382,59 +382,59 @@ async def main():
 asyncio.run(main())
 ```
 
-## Tính năng nâng cao
+## Advanced Features
 
-### 1. Cá nhân hóa người dùng
-- Học hỏi từ lịch sử mua hàng
-- Gợi ý sản phẩm phù hợp
-- Reinforcement Learning từ feedback
+### 1. User Personalization
+- Learn from purchase history
+- Suggest relevant products
+- Reinforcement Learning from feedback
 
 ### 2. Hybrid Orchestrator Architecture
-- **Rule-based Router**: Fast, deterministic routing với pattern matching
-- **ML-based Router**: Context-aware routing với intent classification
-- **Decision Fusion Engine**: Kết hợp decisions với adaptive weights
-- **RAG Agent**: Xử lý tìm kiếm sản phẩm từ dataset thực tế
-- **Conversation Agent**: Hội thoại chung với context awareness
-- **API Agent**: Tích hợp dịch vụ bên ngoài
-- **Performance Tracking**: Real-time metrics và monitoring
+- **Rule-based Router**: Fast, deterministic routing with pattern matching
+- **ML-based Router**: Context-aware routing with intent classification
+- **Decision Fusion Engine**: Combine decisions with adaptive weights
+- **RAG Agent**: Process product search from real dataset
+- **Conversation Agent**: General conversation with context awareness
+- **API Agent**: External service integration
+- **Performance Tracking**: Real-time metrics and monitoring
 
 ### 3. Real Dataset Integration
-- **27,000+ sản phẩm điện thoại thực tế** từ OnePlus, Samsung, Apple, Xiaomi, Motorola, Realme, Nothing
-- **Thông số chi tiết**: CPU, RAM, ROM, camera, pin, màn hình, 5G, NFC, sạc nhanh
-- **Giá cả thực tế**: Từ 19,989 VND đến hàng triệu VND
-- **Rating và reviews** từ người dùng thực tế
-- **Auto-conversion**: Tự động convert format để phù hợp với RAG system
+- **27,000+ real phone products** from OnePlus, Samsung, Apple, Xiaomi, Motorola, Realme, Nothing
+- **Detailed specifications**: CPU, RAM, ROM, camera, battery, screen, 5G, NFC, fast charging
+- **Real pricing**: From 19,989 VND to millions of VND
+- **Ratings and reviews** from real users
+- **Auto-conversion**: Automatically convert format to fit RAG system
 
-### 4. Caching thông minh
-- Redis cache cho production
-- Memory cache cho development
-- Cache responses và embeddings
-- TTL và invalidation
+### 4. Smart Caching
+- Redis cache for production
+- Memory cache for development
+- Cache responses and embeddings
+- TTL and invalidation
 
 ### 5. Monitoring & Observability (Phase 6)
 - **Enhanced Metrics System**: API latency, query counts, success/failure rates
 - **Comprehensive Health Checks**: System resources, application health, load balancer support
-- **Request Tracing**: OpenTelemetry/Jaeger integration với span tracking
-- **Monitoring Dashboard**: Real-time performance visualization với `/dashboard` endpoint
+- **Request Tracing**: OpenTelemetry/Jaeger integration with span tracking
+- **Monitoring Dashboard**: Real-time performance visualization with `/dashboard` endpoint
 - **Hybrid Orchestrator Metrics**: Rule-based vs ML-based vs hybrid performance tracking
 
 ### 6. Training & Fine-tuning (Phase 7)
 - **E-commerce Data Pipeline**: Conversation normalization, intent detection, entity extraction
-- **Model Fine-tuning**: TinyLlama + PEFT/LoRA cho domain e-commerce
+- **Model Fine-tuning**: TinyLlama + PEFT/LoRA for e-commerce domain
 - **Comprehensive Evaluation**: BLEU, ROUGE, intent accuracy, semantic similarity
-- **Synthetic Data Generation**: Tăng cường training data với variations
-- **Continuous Improvement**: Model retraining từ conversation data
+- **Synthetic Data Generation**: Enhance training data with variations
+- **Continuous Improvement**: Model retraining from conversation data
 
 ## Testing
 
 ```bash
-# Chạy tất cả tests
+# Run all tests
 pytest
 
-# Chạy test cụ thể
+# Run specific test
 pytest tests/test_router.py
 
-# Chạy với coverage
+# Run with coverage
 pytest --cov=core tests/
 ```
 
@@ -528,16 +528,16 @@ curl http://localhost:8000/dashboard
 curl http://localhost:8000/traces
 ```
 
-## Testing với Postman
+## Testing with Postman
 
-### Test Cases với Dataset Thực Tế
+### Test Cases with Real Dataset
 
 #### 1. **Product Search Tests**
 ```bash
-# Test OnePlus từ dataset thực tế
+# Test OnePlus from real dataset
 curl -X POST http://localhost:8000/ask \
   -H "Content-Type: application/json" \
-  -d '{"message": "OnePlus dưới 50 triệu", "user_id": "user123"}'
+  -d '{"message": "OnePlus under 50 million", "user_id": "user123"}'
 
 # Test Samsung Galaxy
 curl -X POST http://localhost:8000/ask \
@@ -547,7 +547,7 @@ curl -X POST http://localhost:8000/ask \
 # Test Nothing Phone
 curl -X POST http://localhost:8000/ask \
   -H "Content-Type: application/json" \
-  -d '{"message": "Nothing Phone giá rẻ", "user_id": "user123"}'
+  -d '{"message": "Nothing Phone cheap", "user_id": "user123"}'
 
 # Test Apple iPhone
 curl -X POST http://localhost:8000/ask \
@@ -557,28 +557,28 @@ curl -X POST http://localhost:8000/ask \
 
 #### 2. **Conversation Tests**
 ```bash
-# Test hội thoại chung
+# Test general conversation
 curl -X POST http://localhost:8000/ask \
   -H "Content-Type: application/json" \
-  -d '{"message": "Xin chào, bạn có thể giúp tôi không?", "user_id": "user123"}'
+  -d '{"message": "Hello, can you help me?", "user_id": "user123"}'
 
-# Test tư vấn sản phẩm
+# Test product consultation
 curl -X POST http://localhost:8000/ask \
   -H "Content-Type: application/json" \
-  -d '{"message": "Tôi cần điện thoại chụp ảnh đẹp", "user_id": "user123"}'
+  -d '{"message": "I need a phone with good camera", "user_id": "user123"}'
 ```
 
 #### 3. **API Integration Tests**
 ```bash
-# Test tracking đơn hàng
+# Test order tracking
 curl -X POST http://localhost:8000/ask \
   -H "Content-Type: application/json" \
-  -d '{"message": "Đơn hàng #1234 đang ở đâu?", "user_id": "user123"}'
+  -d '{"message": "Where is order #1234?", "user_id": "user123"}'
 
-# Test thanh toán
+# Test payment
 curl -X POST http://localhost:8000/ask \
   -H "Content-Type: application/json" \
-  -d '{"message": "Tôi muốn thanh toán đơn hàng", "user_id": "user123"}'
+  -d '{"message": "I want to pay for my order", "user_id": "user123"}'
 ```
 
 #### 4. **Performance Tests**
@@ -595,7 +595,7 @@ curl http://localhost:8000/dashboard
 
 ### Postman Collection
 
-Tạo Postman collection với các request sau:
+Create Postman collection with the following requests:
 
 1. **Environment Variables**:
    - `base_url`: `http://localhost:8000`
@@ -612,7 +612,7 @@ Tạo Postman collection với các request sau:
    }
    ```
 
-3. **Test Scripts** (trong Postman Tests tab):
+3. **Test Scripts** (in Postman Tests tab):
    ```javascript
    pm.test("Status code is 200", function () {
        pm.response.to.have.status(200);
@@ -649,45 +649,45 @@ pre-commit install
 ## Performance
 
 ### Caching
-- Response caching giảm 80% thời gian phản hồi
-- Embedding caching tăng tốc RAG
-- Redis cluster cho high availability
+- Response caching reduces 80% response time
+- Embedding caching speeds up RAG
+- Redis cluster for high availability
 
 ### Scaling
-- Horizontal scaling với multiple instances
+- Horizontal scaling with multiple instances
 - Load balancing
 - Database sharding
-- CDN cho static assets
+- CDN for static assets
 
 ## FAQ
 
-### Q: Làm thế nào để thay đổi model LLM?
-A: Cập nhật biến môi trường `MODEL_LOADER_BACKEND` trong file `.env`:
+### Q: How to change LLM model?
+A: Update environment variable `MODEL_LOADER_BACKEND` in `.env` file:
 ```bash
-MODEL_LOADER_BACKEND=gemini  # hoặc groq, ollama, openai
+MODEL_LOADER_BACKEND=gemini  # or groq, ollama, openai
 ```
 
-### Q: Làm thế nào để thêm dataset sản phẩm mới?
-A: Thay thế file `training/dataset/dataset.json` và chạy:
+### Q: How to add new product dataset?
+A: Replace `training/dataset/dataset.json` file and run:
 ```bash
 python init_data.py
 ```
 
-### Q: Làm thế nào để bật/tắt personalization?
-A: Cập nhật trong file `.env`:
+### Q: How to enable/disable personalization?
+A: Update in `.env` file:
 ```bash
 ENABLE_PERSONALIZATION=true
 ENABLE_RECOMMENDATIONS=true
 ```
 
-### Q: Làm thế nào để monitor hiệu suất?
-A: Sử dụng các endpoint:
+### Q: How to monitor performance?
+A: Use these endpoints:
 - `/health` - Health check
-- `/metrics` - Metrics chi tiết
-- `/dashboard` - Dashboard tổng quan
+- `/metrics` - Detailed metrics
+- `/dashboard` - Overview dashboard
 
-### Q: Làm thế nào để scale hệ thống?
-A: Sử dụng load balancer và multiple instances với Redis cluster.
+### Q: How to scale the system?
+A: Use load balancer and multiple instances with Redis cluster.
 
 ## Roadmap
 
@@ -717,19 +717,19 @@ A: Sử dụng load balancer và multiple instances với Redis cluster.
 
 ## Contributing
 
-Chúng tôi hoan nghênh mọi đóng góp! Vui lòng:
+We welcome all contributions! Please:
 
 1. Fork repository
-2. Tạo feature branch (`git checkout -b feature/AmazingFeature`)
+2. Create feature branch (`git checkout -b feature/AmazingFeature`)
 3. Commit changes (`git commit -m 'Add some AmazingFeature'`)
 4. Push to branch (`git push origin feature/AmazingFeature`)
-5. Tạo Pull Request
+5. Create Pull Request
 
 ### Development Guidelines
-- Tuân thủ PEP 8 style guide
-- Viết test cases cho code mới
-- Cập nhật documentation
-- Sử dụng conventional commits
+- Follow PEP 8 style guide
+- Write test cases for new code
+- Update documentation
+- Use conventional commits
 
 ## License
 
@@ -756,7 +756,7 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 <div align="center">
 
-**Nếu dự án này hữu ích, hãy cho chúng tôi một star!**
+**If this project is helpful, please give us a star!**
 
 Made with ❤️ by AI Agent Team
 
