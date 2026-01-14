@@ -131,6 +131,7 @@ class ChatRequest(BaseModel):
     intent: Optional[str] = None  # search, chat, api_call
 
 class ChatResponse(BaseModel):
+    user_id: str
     response: str
     intent: str
     confidence: float
@@ -231,6 +232,7 @@ async def ask(
             logger.warning(f"Failed to collect conversation for training: {e}")
         
         return ChatResponse(
+            user_id=request.user_id,
             response=response["response"],
             intent=response["intent"],
             confidence=response["confidence"],

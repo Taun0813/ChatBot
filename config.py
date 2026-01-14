@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     vectorstore_backend: str = Field("pinecone", alias="VECTORSTORE_BACKEND")
 
     # Model Configuration
-    model_name: str = Field("gemini-1.5-flash", alias="MODEL_NAME")
+    model_name: str = Field("gemini-2.5-flash", alias="MODEL_NAME")
     max_tokens: int = Field(2048, alias="MAX_TOKENS")
     temperature: float = Field(0.7, alias="TEMPERATURE")
     top_p: float = Field(0.9, alias="TOP_P")
