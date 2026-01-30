@@ -14,7 +14,7 @@ class SpringBootClient:
     
     def __init__(self):
         self.settings = get_settings()
-        self.api_gateway_url = "http://localhost:8181"
+        self.api_gateway_url = self.settings.api_gateway_url
         self.jwt_token = self.settings.jwt_token if hasattr(self.settings, 'jwt_token') else None
         self.timeout = self.settings.api_timeout
         self.client = None

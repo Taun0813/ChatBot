@@ -19,5 +19,10 @@ RUN pip install --upgrade pip \
 
 COPY . .
 
-EXPOSE 8000
-CMD ["gunicorn", "app:app", "-w", "2", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--timeout", "120"]
+# Railway và các platform khác sẽ set PORT env variable
+ARG PORT=8000
+ENV PORT=${PORT}
+EXPOSE ${PORT}
+
+# Sử dụng shell form để có thể dùng $PORT variable
+CMD gunicorn app:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT} --timeout 120

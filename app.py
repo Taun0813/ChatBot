@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
         config = RouterConfig(
             rag_config={
                 "name": "rag",
-                "enabled": False,  # Disable RAG to prevent Pinecone connection issues
+                "enabled": settings.rag_enabled,
                 "pinecone_config": {
                     "api_key": settings.pinecone_api_key,
                     "environment": settings.pinecone_environment,
@@ -61,7 +61,7 @@ async def lifespan(app: FastAPI):
             },
             interaction_config={},
             api_config={
-                "enable_api_calls": False,  # Disable external API calls to prevent blocking
+                "enable_api_calls": settings.enable_api_calls,
                 "order_service_url": settings.order_service_url,
                 "payment_service_url": settings.payment_service_url,
                 "warranty_service_url": settings.warranty_service_url,
@@ -70,12 +70,12 @@ async def lifespan(app: FastAPI):
                 "payment_service_api_key": settings.payment_service_api_key,
                 "warranty_service_api_key": settings.warranty_service_api_key,
                 "product_service_api_key": settings.product_service_api_key,
-                "api_timeout": 5  # Reduce timeout to 5 seconds
+                "api_timeout": settings.api_timeout
             },
             personalization_config={
-                "enable_personalization": False,  # Disable personalization to prevent DB issues
-                "enable_recommendations": False,
-                "enable_rl_learning": False,
+                "enable_personalization": settings.enable_personalization,
+                "enable_recommendations": settings.enable_recommendations,
+                "enable_rl_learning": settings.enable_rl_learning,
                 "db_path": "data/profiles/profiles.db",
                 "json_backup": True,
                 "profiles_dir": "./data/profiles",
