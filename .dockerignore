@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.log
+
+.git/
+.env
+
+data/processed/
+data/profiles/
+training/dataset/
+monitoring/logs/

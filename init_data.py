@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from typing import Dict, Any, List
 from config import get_settings
 from adapters.pinecone_client import PineconeClient
@@ -96,16 +97,21 @@ class DataInitializer:
             logger.error(f"Failed to initialize RAG model: {e}")
             raise
     
-    async def load_dataset(self, dataset_path: str = "training/dataset/dataset.json") -> List[Dict[str, Any]]:
-        """Load dataset from JSON file"""
+    async def load_dataset(self, dataset_path: str = "Mobiles Dataset (2025).csv") -> List[Dict[str, Any]]:
+        """Load dataset from CSV file using pandas"""
         try:
             if not os.path.exists(dataset_path):
                 raise FileNotFoundError(f"Dataset file not found: {dataset_path}")
             
             logger.info(f"Loading dataset from {dataset_path}")
             
-            with open(dataset_path, 'r', encoding='utf-8') as f:
-                dataset = json.load(f)
+            import pandas as pd
+            
+            # Read CSV
+            df = pd.read_csv(dataset_path)
+            
+            # Convert to list of dicts for processing
+            dataset = df.to_dict('records')
             
             logger.info(f"Loaded {len(dataset)} products from dataset")
             return dataset
@@ -115,100 +121,169 @@ class DataInitializer:
             raise
     
     def transform_product_data(self, raw_product: Dict[str, Any]) -> Dict[str, Any]:
-        """Transform raw product data to our format"""
+        """Transform raw product data from CSV to our format"""
         try:
             # Extract basic information
-            brand = raw_product.get("brand_name", "Unknown").title()
-            model = raw_product.get("model", "Unknown")
-            price = raw_product.get("price", 0)
-            rating = raw_product.get("rating", 0) / 100.0  # Convert to 0-1 scale
+            brand = str(raw_product.get("Company Name", "Unknown")).strip()
+            full_model_name = str(raw_product.get("Model Name", "Unknown")).strip()
             
+            # Attempt to extract storage (ROM) from model name (e.g., "iPhone 16 128GB")
+            rom_match = re.search(r'(\d+)(GB|TB)', full_model_name, re.IGNORECASE)
+            rom_val = rom_match.group(0) if rom_match else "Unknown"
+            
+            # Clean Model Name (remove storage info for cleaner name if desired, or keep full)
+            model = full_model_name
+            
+            # Price Conversion (USD to VND)
+            # Format: "USD 799" -> 799 -> * 25000
+            price_str = str(raw_product.get("Launched Price (USA)", "0"))
+            try:
+                # Remove "USD" and commas, then convert
+                clean_price = float(re.sub(r'[^\d.]', '', price_str))
+                price_vnd = int(clean_price * 25000)
+            except:
+                price_vnd = 0
+            
+            # Clean specs - handle comma-separated numbers
+            def clean_spec(val, unit=""):
+                s = str(val).lower().replace(unit.lower(), "").strip()
+                # Remove commas and extract number
+                try:
+                    # Remove all non-digit characters except decimal point
+                    cleaned = re.sub(r'[^\d.]', '', s.replace(',', ''))
+                    return float(cleaned) if cleaned else 0
+                except:
+                    return 0
+
+            ram = clean_spec(raw_product.get("RAM", "0"), "GB")
+            screen_size = clean_spec(raw_product.get("Screen Size", "0"), "inches")
+            battery = clean_spec(raw_product.get("Battery Capacity", "0"), "mAh")
+            
+            # Camera parsing (taking the main sensor val if multiple)
+            # "48MP" -> 48
+            back_cam_str = str(raw_product.get("Back Camera", "0"))
+            back_cam = float(re.search(r'(\d+)', back_cam_str).group(1)) if re.search(r'(\d+)', back_cam_str) else 0
+            
+            front_cam_str = str(raw_product.get("Front Camera", "0"))
+            front_cam = float(re.search(r'(\d+)', front_cam_str).group(1)) if re.search(r'(\d+)', front_cam_str) else 0
+
             # Create product ID
             product_id = f"{brand.lower()}_{model.lower().replace(' ', '_').replace('-', '_')}"
+            product_id = re.sub(r'[^a-zA-Z0-9_]', '', product_id) # Sanitize
+            
+            # Infer OS from brand
+            os_type = "iOS" if brand.lower() == "apple" else "Android"
+            
+            # Extract weight
+            weight_str = str(raw_product.get("Mobile Weight", "0"))
+            weight = clean_spec(weight_str, "g")
+            
+            # Extract launch year
+            launch_year = raw_product.get("Launched Year", "")
             
             # Extract specifications
             specifications = {
-                "màn hình": f"{raw_product.get('screen_size', 0)} inch",
-                "ram": f"{raw_product.get('ram_capacity', 0)}GB",
-                "rom": f"{raw_product.get('internal_memory', 0)}GB",
-                "pin": f"{raw_product.get('battery_capacity', 0)}mAh",
-                "camera": f"{raw_product.get('primary_camera_rear', 0)}MP",
-                "camera trước": f"{raw_product.get('primary_camera_front', 0)}MP",
-                "chip": raw_product.get("processor_brand", "Unknown").title(),
-                "tốc độ chip": f"{raw_product.get('processor_speed', 0)}GHz",
-                "số nhân": raw_product.get("num_cores", 0),
-                "hệ điều hành": raw_product.get("os", "Unknown").title(),
-                "tần số quét": f"{raw_product.get('refresh_rate', 0)}Hz",
-                "5G": "Có" if raw_product.get("has_5g") == "TRUE" else "Không",
-                "NFC": "Có" if raw_product.get("has_nfc") == "TRUE" else "Không",
-                "sạc nhanh": f"{raw_product.get('fast_charging', 0)}W" if raw_product.get("fast_charging_available") else "Không"
+                "màn hình": f"{screen_size} inch",
+                "ram": f"{int(ram)}GB" if ram > 0 else "Unknown",
+                "rom": f"{rom_val}",
+                "pin": f"{int(battery)}mAh" if battery > 0 else "Unknown",
+                "camera": f"{back_cam_str}",
+                "camera trước": f"{front_cam_str}",
+                "chip": str(raw_product.get("Processor", "Unknown")),
+                "trọng lượng": f"{int(weight)}g" if weight > 0 else "Unknown",
+                "hệ điều hành": os_type,
+                "năm ra mắt": str(launch_year) if launch_year else "Unknown",
+                "5G": "Có", # Assumption for 2025 dataset
+                "NFC": "Có", # Assumption
+                "sạc nhanh": "Có" # Assumption
             }
             
             # Create description
-            description = f"{brand} {model} - Điện thoại thông minh với màn hình {raw_product.get('screen_size', 0)} inch, camera {raw_product.get('primary_camera_rear', 0)}MP, pin {raw_product.get('battery_capacity', 0)}mAh"
-            
-            # Determine category
-            category = "Điện thoại"
+            description_parts = [
+                f"{model} - Điện thoại {brand}",
+                f"màn hình {screen_size} inch" if screen_size > 0 else "",
+                f"vi xử lý {specifications['chip']}",
+                f"camera {specifications['camera']}",
+                f"pin {specifications['pin']}" if battery > 0 else "",
+                f"RAM {specifications['ram']}" if ram > 0 else "",
+                f"ROM {rom_val}",
+                f"Hệ điều hành {os_type}",
+                f"Ra mắt năm {launch_year}" if launch_year else ""
+            ]
+            description = ". ".join([p for p in description_parts if p]) + f". Giá khoảng {price_vnd:,.0f} VNĐ."
             
             # Create product data
             product_data = {
                 "id": product_id,
-                "name": f"{brand} {model}",
+                "name": model,
                 "brand": brand,
-                "price": price,
+                "price": price_vnd,
                 "description": description,
-                "category": category,
-                "rating": rating,
-                "reviews_count": 0,  # Not available in dataset
+                "category": "Điện thoại",
+                "rating": 4.5, # Default since no rating in CSV
+                "reviews_count": 0,
                 "availability": "In Stock",
                 "specifications": specifications,
-                "image_url": "",  # Not available in dataset
-                "features": self._extract_features(raw_product)
+                "image_url": "",
+                "features": self._extract_features(specifications, price_vnd)
             }
             
             return product_data
             
         except Exception as e:
-            logger.error(f"Failed to transform product data: {e}")
+            logger.error(f"Failed to transform product data: {e} | Data: {raw_product}")
             return None
     
-    def _extract_features(self, raw_product: Dict[str, Any]) -> List[str]:
-        """Extract features from raw product data"""
+    def _extract_features(self, specs: Dict[str, Any], price: int) -> List[str]:
+        """Extract features based on transformed specs"""
         features = []
         
+        # Parse numeric values again for logic
+        try:
+            # Parse RAM (format: "6GB" or "8GB")
+            ram_str = specs.get("ram", "0")
+            ram = float(re.sub(r'[^\d.]', '', ram_str)) if ram_str != "Unknown" else 0
+            
+            # Parse Battery (format: "3600mAh")
+            battery_str = specs.get("pin", "0")
+            battery = float(re.sub(r'[^\d.]', '', battery_str)) if battery_str != "Unknown" else 0
+            
+            # Parse Camera (format: "48MP" or "12MP / 4K")
+            cam_str = specs.get("camera", "0")
+            cam_match = re.search(r'(\d+)', cam_str)
+            cam_main = float(cam_match.group(1)) if cam_match else 0
+        except Exception as e:
+            logger.warning(f"Error parsing features: {e}")
+            ram, battery, cam_main = 0, 0, 0
+            
         # Camera features
-        if raw_product.get("primary_camera_rear", 0) >= 50:
+        if cam_main >= 50:
             features.append("camera cao cấp")
-        elif raw_product.get("primary_camera_rear", 0) >= 20:
+        elif cam_main >= 20:
             features.append("camera tốt")
         
         # Battery features
-        if raw_product.get("battery_capacity", 0) >= 5000:
+        if battery >= 5000:
             features.append("pin khỏe")
-        elif raw_product.get("battery_capacity", 0) >= 4000:
+        elif battery >= 4000:
             features.append("pin tốt")
         
         # Performance features
-        if raw_product.get("ram_capacity", 0) >= 8:
+        if ram >= 8:
             features.append("ram cao")
-        if raw_product.get("internal_memory", 0) >= 256:
-            features.append("rom lớn")
+            features.append("đa nhiệm tốt")
+            
+        # Price segments
+        if price > 20000000:
+            features.append("cao cấp")
+            features.append("sang trọng")
+        elif price < 5000000:
+            features.append("giá rẻ")
+            features.append("sinh viên")
         
-        # Display features
-        if raw_product.get("screen_size", 0) >= 6.5:
-            features.append("màn hình lớn")
-        if raw_product.get("refresh_rate", 0) >= 90:
-            features.append("tần số quét cao")
-        
-        # Connectivity features
-        if raw_product.get("has_5g") == "TRUE":
-            features.append("5G")
-        if raw_product.get("has_nfc") == "TRUE":
-            features.append("NFC")
-        
-        # Gaming features
-        if raw_product.get("ram_capacity", 0) >= 8 and raw_product.get("processor_speed", 0) >= 2.5:
-            features.append("chơi game")
+        # Default features for modern phones
+        features.append("5G")
+        features.append("sạc nhanh")
         
         return features
     
@@ -246,7 +321,7 @@ class DataInitializer:
                             failed_count += 1
                             
                     except Exception as e:
-                        logger.error(f"Failed to ingest product {product.get('model', 'Unknown')}: {e}")
+                        logger.error(f"Failed to ingest product {product.get('Model Name', 'Unknown')}: {e}")
                         failed_count += 1
                 
                 # Small delay between batches

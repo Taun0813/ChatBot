@@ -11,7 +11,7 @@ Intelligent AI Agent system for e-commerce with **Hybrid Orchestrator** combinin
 ## Key Features
 
 - **Hybrid Orchestrator**: Combines rule-based + ML-based routing (85-95% accuracy)
-- **Real Dataset**: 27,000+ phone products from OnePlus, Samsung, Apple, Xiaomi, Motorola, Realme, Nothing
+- **Real Dataset**: 900+ mobile phone products from major brands (Apple, Samsung, OnePlus, Xiaomi, etc.) in CSV format
 - **RAG System**: Semantic search with Pinecone vector database (v5.0.1+)
 - **Smart Conversation**: Natural interaction with context-aware routing
 - **API Integration**: Connect with microservices (orders, payments, warranty)
@@ -129,8 +129,8 @@ ai_agent/
 │   └── schema/                   # Data schemas
 │
 ├── training/                     # Model training & fine-tuning
-│   ├── dataset/                  # Real dataset
-│   │   └── dataset.json          # 27,000+ real phone products
+│   ├── dataset/                  # Training dataset
+│   │   └── dataset.json          # Training conversations
 │   ├── prepare_data.py           # Data preparation
 │   ├── finetune.py               # Model fine-tuning
 │   ├── evaluate.py               # Model evaluation
@@ -188,7 +188,8 @@ cp env.example .env
 
 ### 5. Initialize data with real dataset
 ```bash
-# Load 27,000+ real phone products into Pinecone
+# Load 900+ mobile phone products from CSV into Pinecone
+# Dataset: Mobiles Dataset (2025).csv
 python init_data.py
 ```
 
@@ -412,11 +413,12 @@ asyncio.run(main())
 - **Performance Tracking**: Real-time metrics and monitoring
 
 ### 3. Real Dataset Integration
-- **27,000+ real phone products** from OnePlus, Samsung, Apple, Xiaomi, Motorola, Realme, Nothing
-- **Detailed specifications**: CPU, RAM, ROM, camera, battery, screen, 5G, NFC, fast charging
-- **Real pricing**: From 19,989 VND to millions of VND
-- **Ratings and reviews** from real users
-- **Auto-conversion**: Automatically convert format to fit RAG system
+- **900+ mobile phone products** from major brands (Apple, Samsung, OnePlus, Xiaomi, etc.)
+- **CSV Format**: Easy to update and maintain (`Mobiles Dataset (2025).csv`)
+- **Detailed specifications**: RAM, ROM, camera, battery, screen size, processor, weight
+- **Multi-currency pricing**: Supports USD, PKR, INR, CNY, AED with automatic VND conversion
+- **Auto-conversion**: Automatically converts CSV format to RAG-compatible format
+- **Smart parsing**: Handles comma-separated numbers, extracts storage from model names
 
 ### 4. Smart Caching
 - Redis cache for production (v5.2.1+)
@@ -689,10 +691,12 @@ MODEL_LOADER_BACKEND=gemini  # or groq, ollama, openai, claude, cohere
 ```
 
 ### Q: How to add new product dataset?
-A: Replace `training/dataset/dataset.json` file and run:
+A: Replace `Mobiles Dataset (2025).csv` file with your CSV (same format) and run:
 ```bash
 python init_data.py
 ```
+
+The CSV should have columns: Company Name, Model Name, RAM, Front Camera, Back Camera, Processor, Battery Capacity, Screen Size, Launched Price (USA), etc.
 
 ### Q: How to enable/disable personalization?
 A: Update in `.env` file:

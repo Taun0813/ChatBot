@@ -47,16 +47,22 @@ class Settings(BaseSettings):
     enable_recommendations: bool = Field(True, alias="ENABLE_RECOMMENDATIONS")
     enable_rl_learning: bool = Field(True, alias="ENABLE_RL_LEARNING")
 
-    # External services
-    order_service_url: str = "http://localhost:8081/api/orders"
-    payment_service_url: str = "http://localhost:8082/api/payments"
-    warranty_service_url: str = "http://localhost:8083/api/warranties"
-    product_service_url: str = "http://localhost:8084/api/products"
+    # External services - Spring Boot Microservices (via API Gateway)
+    api_gateway_url: str = Field("http://localhost:8181", alias="API_GATEWAY_URL")
+    order_service_url: str = Field("http://localhost:8181/api/orders", alias="ORDER_SERVICE_URL")
+    payment_service_url: str = Field("http://localhost:8181/api/payments", alias="PAYMENT_SERVICE_URL")
+    warranty_service_url: str = Field("http://localhost:8181/api/warranties", alias="WARRANTY_SERVICE_URL")
+    product_service_url: str = Field("http://localhost:8181/api/products", alias="PRODUCT_SERVICE_URL")
+    cart_service_url: str = Field("http://localhost:8181/api/carts", alias="CART_SERVICE_URL")
+    user_service_url: str = Field("http://localhost:8181/api/users", alias="USER_SERVICE_URL")
 
     order_service_api_key: Optional[str] = None
     payment_service_api_key: Optional[str] = None
     warranty_service_api_key: Optional[str] = None
     product_service_api_key: Optional[str] = None
+    
+    # JWT Token for Spring Boot services authentication
+    jwt_token: Optional[str] = Field(None, alias="JWT_TOKEN")
 
     # API timeout
     api_timeout: int = Field(30, alias="API_TIMEOUT")

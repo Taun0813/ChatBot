@@ -1,275 +1,34 @@
-# ===========================================
-# AI AGENT SYSTEM - UPDATED REQUIREMENTS
-# ===========================================
+# ===================================
+# CORE APPLICATION REQUIREMENTS
+# ===================================
+# These are the essential packages needed to run the AI Agent application.
+# For development tools and testing libraries, see requirements-dev.txt
 
-# Core FastAPI and web framework
+# Core web framework and server
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
+gunicorn==23.0.0
+
+# Configuration and settings management
 pydantic==2.10.4
 pydantic-settings==2.7.0
-python-multipart==0.0.20
+python-dotenv==1.0.1
 
-# ===========================================
-# FREE AI API LIBRARIES (RECOMMENDED)
-# ===========================================
-
-# Google Gemini API (FREE)
-google-generativeai==0.8.3
-google-cloud-aiplatform==1.79.0
-
-# Groq API (FREE - High Performance)
-groq==0.9.0
-
-# Ollama (FREE - Local)
-ollama==0.4.2
-
-# ===========================================
-# OPTIONAL PAID AI API LIBRARIES
-# ===========================================
-
-# OpenAI API
-openai==1.58.1
-
-# Anthropic Claude API
-anthropic==0.40.0
-
-# Cohere API
-cohere==5.5.3
-
-# Hugging Face
-huggingface-hub==0.27.0
-transformers==4.47.1
-
-# ===========================================
-# VECTOR DATABASE (CLOUD ONLY)
-# ===========================================
-
-# Pinecone Vector Database
-pinecone-client==5.0.1
-
-# ===========================================
-# CACHING LAYER
-# ===========================================
-
-# Redis Cache
-redis[hiredis]==5.2.1
-redis-py-cluster==2.1.3
-
-# Memory Cache
-diskcache==5.6.3
-cachetools==5.3.2
-
-# ===========================================
-# MONITORING & OBSERVABILITY
-# ===========================================
-
-# Metrics Collection
-prometheus-client==0.21.1
+# HTTP client and system utilities
+httpx==0.28.1
 psutil==6.1.0
 
-# Logging
-structlog==24.4.0
-python-json-logger==2.0.7
-coloredlogs==15.0.1
+# Caching and Vector Database
+redis[hiredis]==5.2.1
+pinecone-client==5.0.1
 
-# Tracing (Optional)
-opentelemetry-api==1.28.0
-opentelemetry-sdk==1.28.0
-opentelemetry-instrumentation-fastapi==0.45b0
 
-# ===========================================
-# DATA PROCESSING & ML
-# ===========================================
-
-# Core ML Libraries
-torch==2.5.1
-numpy==2.2.0
-pandas==2.2.3
-scikit-learn==1.5.2
-scipy==1.14.1
+# AI Model Providers
+google-generativeai==0.8.3
 
 # Data Processing
-datasets==3.2.0
-evaluate==0.4.2
-accelerate==1.1.0
-peft==0.15.0
-bitsandbytes==0.44.0
+pandas==2.2.0
+numpy==1.26.3
 
-# NLP Libraries
-nltk==3.9.1
-spacy==3.8.2
-underthesea==6.7.0
-pyvi==0.1.1
-
-# ===========================================
-# DATABASE & STORAGE
-# ===========================================
-
-# SQL Database
-sqlalchemy==2.0.36
-alembic==1.14.0
-psycopg2-binary==2.9.10
-
-# NoSQL (Optional)
-pymongo==4.10.1
-motor==3.6.0
-
-# ===========================================
-# HTTP & API CLIENT
-# ===========================================
-
-# HTTP Clients
-httpx==0.28.1
-aiohttp==3.11.11
-requests==2.32.3
-
-# API Documentation
-sphinx==8.1.3
-sphinx-rtd-theme==3.1.1
-
-# ===========================================
-# CONFIGURATION & ENVIRONMENT
-# ===========================================
-
-# Environment Management
-python-dotenv==1.0.1
-pyyaml==6.0.2
-toml==0.10.2
-
-# ===========================================
-# PERSONALIZATION & ML
-# ===========================================
-
-# Recommendation Systems
-scikit-surprise==1.1.3
-implicit==0.7.2
-
-# Reinforcement Learning
-gymnasium==0.29.1
-stable-baselines3==2.4.0
-
-# ===========================================
-# TESTING
-# ===========================================
-
-# Testing Framework
-pytest==8.3.4
-pytest-asyncio==0.24.0
-pytest-cov==6.0.0
-pytest-mock==3.14.0
-pytest-xdist==3.6.0
-
-# Test Data
-factory-boy==3.3.1
-faker==33.0.0
-
-# ===========================================
-# DEVELOPMENT TOOLS
-# ===========================================
-
-# Code Quality
-black==24.10.0
-isort==5.13.2
-flake8==7.1.1
-mypy==1.13.0
-pre-commit==4.0.1
-
-# Debugging
-ipdb==0.13.13
-pdbpp==0.10.3
-
-# ===========================================
-# UTILITIES
-# ===========================================
-
-# Date/Time
-python-dateutil==2.9.0.post0
-pytz==2024.2
-
-# Progress Bars
-tqdm==4.67.1
-rich==13.9.4
-
-# File Processing
-openpyxl==3.1.5
-python-magic==0.4.27
-pillow==11.0.0
-aiofiles==24.1.0
-
-# ===========================================
-# SECURITY
-# ===========================================
-
-# Authentication & Authorization
-cryptography==44.0.0
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-
-# Rate Limiting
-slowapi==0.1.9
-limits==3.13.0
-
-# ===========================================
-# BACKGROUND TASKS
-# ===========================================
-
-# Task Queue
-celery==5.4.0
-redis==5.2.1
-
-# ===========================================
-# MODEL SERVING & OPTIMIZATION
-# ===========================================
-
-# Model Optimization
-onnxruntime==1.20.0
-optimum==1.21.0
-torch-audio==2.5.1
-
-# ===========================================
-# VISUALIZATION (OPTIONAL)
-# ===========================================
-
-# Data Visualization
-matplotlib==3.10.0
-seaborn==0.13.2
-plotly==5.24.1
-
-# ===========================================
-# PERFORMANCE & PRODUCTION
-# ===========================================
-
-# Production Server
-gunicorn==23.0.0
-uvloop==0.21.0
-
-# Performance Monitoring
-memory-profiler==0.61.0
-py-spy==0.3.14
-
-# ===========================================
-# INSTALLATION INSTRUCTIONS
-# ===========================================
-
-# Cài đặt tất cả dependencies (recommended):
-# pip install -r requirements.txt
-
-# Cài đặt chỉ core dependencies (minimal):
-# pip install fastapi==0.115.6 uvicorn[standard]==0.32.1 pydantic==2.10.4 pydantic-settings==2.7.0 google-generativeai==0.8.3 pinecone-client==5.0.1 redis[hiredis]==5.2.1 httpx==0.28.1 python-dotenv==1.0.1 psutil==6.1.0
-
-# Cài đặt cho development:
-# pip install -r requirements.txt black==24.10.0 isort==5.13.2 flake8==7.1.1 mypy==1.13.0 pytest==8.3.4 pytest-asyncio==0.24.0 pytest-cov==6.0.0
-
-# Cài đặt cho production:
-# pip install fastapi==0.115.6 uvicorn[standard]==0.32.1 gunicorn==23.0.0 redis[hiredis]==5.2.1 pinecone-client==5.0.1 google-generativeai==0.8.3
-
-# ===========================================
-# VERSION COMPATIBILITY
-# ===========================================
-
-# Python: 3.10+ (recommended: 3.11+)
-# FastAPI: 0.115.6+ (latest stable)
-# Pydantic: 2.10.4+ (v2 only)
-# PyTorch: 2.5.1+ (CUDA 12.1+ supported)
-# Transformers: 4.47.1+ (latest)
-# Pinecone: 5.0.1+ (latest API)
+# Utilities
+python-multipart==0.0.9
