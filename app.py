@@ -56,7 +56,8 @@ async def lifespan(app: FastAPI):
                     "model_name": settings.model_name,
                     "max_tokens": settings.max_tokens,
                     "temperature": settings.temperature,
-                    "top_p": settings.top_p
+                    "top_p": settings.top_p,
+                    "api_key": settings.gemini_api_key if settings.model_loader_backend == "gemini" else settings.groq_api_key if settings.model_loader_backend == "groq" else settings.openai_api_key if settings.model_loader_backend == "openai" else settings.anthropic_api_key
                 }
             },
             interaction_config={},

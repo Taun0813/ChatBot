@@ -682,8 +682,13 @@ class AgnoRouter:
                 model_name=model_config.get("model_name", "gemini-1.5-flash"),
                 max_tokens=model_config.get("max_tokens", 2048),
                 temperature=model_config.get("temperature", 0.7),
-                top_p=model_config.get("top_p", 0.9)
+                top_p=model_config.get("top_p", 0.9),
+                api_key=model_config.get("api_key")
             )
+            
+            success = await self.model_loader.initialize()
+            if not success:
+                raise RuntimeError(f"Model loader failed to initialize: {model_config.get('backend')}")
             
             logger.info(f"Model loader initialized: {model_config.get('backend')}")
             

@@ -384,9 +384,13 @@ class ProfileManager:
         try:
             price_range = profile.get("preferences", {}).get("price_range", {})
             if price_range:
+                max_val = price_range.get("max", 999999999)
+                # Replace infinity with large finite value
+                if max_val == float('inf'):
+                    max_val = 999999999
                 return {
                     "min": price_range.get("min", 0),
-                    "max": price_range.get("max", float('inf'))
+                    "max": max_val
                 }
             return None
         except:
