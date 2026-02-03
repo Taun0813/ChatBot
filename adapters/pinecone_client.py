@@ -32,7 +32,7 @@ class PineconeClient:
         api_key: str,
         environment: str = "us-west1-gcp-free",
         index_name: str = "product-search",
-        dimension: int = 768,
+        dimension: int = 1024,
         metric: str = "cosine"
     ):
         self.api_key = api_key
@@ -248,10 +248,15 @@ class PineconeClient:
             
             if price_range:
                 min_price, max_price = price_range
-                price_filter = {"$gte": min_price}
-                if max_price != float('inf'):
-                    price_filter["$lte"] = max_price
-                filter_dict["price"] = price_filter
+                # Sanitize price values to avoid Infinity in JSON
+                min_price = float(min_price) if min_price is not None else 0
+                max_price = float(max_price) if max_price is not None else 999999999
+                # Replace infinity with large finite value
+                if min_price == float('inf'):
+                    min_price = 999999999
+                if max_price == float('inf'):
+                    max_price = 999999999
+                filter_dict["price"] = {"$gte": min_price, "$lte": max_price}
             
             if brand:
                 filter_dict["brand"] = {"$eq": brand}

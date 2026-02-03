@@ -14,7 +14,8 @@ class Settings(BaseSettings):
 
     # Server
     host: str = Field("0.0.0.0", alias="API_HOST")
-    port: int = Field(8000, alias="API_PORT")
+    # Railway và nhiều platform khác sử dụng PORT (uppercase)
+    port: int = Field(8000, alias="PORT")  # Railway uses PORT, fallback to API_PORT if needed
 
     # API Keys
     gemini_api_key: Optional[str] = None
@@ -36,16 +37,20 @@ class Settings(BaseSettings):
     model_loader_backend: str = Field("gemini", alias="MODEL_LOADER_BACKEND")
     vectorstore_backend: str = Field("pinecone", alias="VECTORSTORE_BACKEND")
 
+    # Phase 1 - RAG & API (bật qua env khi đã có Pinecone/Spring Boot)
+    rag_enabled: bool = Field(False, alias="RAG_ENABLED")
+    enable_api_calls: bool = Field(False, alias="ENABLE_API_CALLS")
+
     # Model Configuration
     model_name: str = Field("gemini-2.5-flash", alias="MODEL_NAME")
     max_tokens: int = Field(2048, alias="MAX_TOKENS")
     temperature: float = Field(0.7, alias="TEMPERATURE")
     top_p: float = Field(0.9, alias="TOP_P")
 
-    # Personalization
-    enable_personalization: bool = Field(True, alias="ENABLE_PERSONALIZATION")
-    enable_recommendations: bool = Field(True, alias="ENABLE_RECOMMENDATIONS")
-    enable_rl_learning: bool = Field(True, alias="ENABLE_RL_LEARNING")
+    # Personalization (tắt mặc định để tránh lỗi DB khi chưa setup)
+    enable_personalization: bool = Field(False, alias="ENABLE_PERSONALIZATION")
+    enable_recommendations: bool = Field(False, alias="ENABLE_RECOMMENDATIONS")
+    enable_rl_learning: bool = Field(False, alias="ENABLE_RL_LEARNING")
 
     # External services - Spring Boot Microservices (via API Gateway)
     api_gateway_url: str = Field("http://localhost:8181", alias="API_GATEWAY_URL")

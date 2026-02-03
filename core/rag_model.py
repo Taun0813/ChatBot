@@ -366,7 +366,7 @@ class RAGModel:
     def __init__(self, pinecone_client, model_loader):
         self.pinecone_client = pinecone_client
         self.model_loader = model_loader
-        self.dimension = 1024   # fix theo index product-search
+        self.dimension = 1024   
         self.embedding_model_name = "llama-text-embed-v2"
 
     async def initialize(self):
@@ -492,18 +492,32 @@ class RAGModel:
             for result in search_results:
                 product_info = result.get("product_info", {})
 
+                # ✅ Fix: Parse specifications string back to dict if needed
+                specs = product_info.get("specifications", {})
+                if isinstance(specs, str):
+                    # Try to parse from "key: value; key: value" format
+                    parsed_specs = {}
+                    try:
+                        for item in specs.split(';'):
+                            if ':' in item:
+                                key, val = item.split(':', 1)
+                                parsed_specs[key.strip()] = val.strip()
+                    except:
+                        parsed_specs = specs
+                    specs = parsed_specs
+
                 product = {
                     "id": result["id"],
                     "name": product_info.get("name", "Unknown Product"),
                     "brand": product_info.get("brand", "Unknown Brand"),
-                    "price": product_info.get("price", 0),
+                    "price": float(product_info.get("price", 0)),
                     "description": product_info.get("description", ""),
                     "category": product_info.get("category", "Unknown"),
                     "image_url": product_info.get("image_url", ""),
-                    "rating": product_info.get("rating", 0),
-                    "reviews_count": product_info.get("reviews_count", 0),
+                    "rating": float(product_info.get("rating", 0)),
+                    "reviews_count": int(product_info.get("reviews_count", 0)),
                     "availability": product_info.get("availability", "In Stock"),
-                    "specifications": self._parse_specifications(product_info.get("specifications", {})),
+                    "specifications": specs,
                     "similarity_score": result["score"],
                     "relevance_score": await self._calculate_relevance_score(
                         product_info, user_id
@@ -644,37 +658,39 @@ class RAGModel:
             # Extract price range
             import re
             
-            # Price patterns
+            # Price patterns - updated to better handle Vietnamese
             price_patterns = [
-                r'dưới\s+(\d+)\s*tr(?:iệu)?',
-                r'trên\s+(\d+)\s*tr(?:iệu)?',
-                r'khoảng\s+(\d+)\s*tr(?:iệu)?',
-                r'từ\s+(\d+)\s*đến\s+(\d+)\s*tr(?:iệu)?',
-                r'(\d+)\s*tr(?:iệu)?\s*trở\s+xuống',
-                r'(\d+)\s*tr(?:iệu)?\s*trở\s+lên'
+                (r'từ\s+(\d+)\s*(?:đến|tới)\s+(\d+)\s*tr(?:iệu)?', 'range'),  # "từ 10 đến 20 triệu"
+                (r'dưới\s+(\d+)\s*tr(?:iệu)?(?:\s|$)', 'max'),  # "dưới 20 triệu"
+                (r'trên\s+(\d+)\s*tr(?:iệu)?(?:\s|$)', 'min'),  # "trên 20 triệu"
+                (r'khoảng\s+(\d+)\s*tr(?:iệu)?(?:\s|$)', 'approx'),  # "khoảng 15 triệu"
+                (r'(\d+)\s*tr(?:iệu)?\s*trở\s+xuống', 'max'),  # "20 triệu trở xuống"
+                (r'(\d+)\s*tr(?:iệu)?\s*trở\s+lên', 'min'),  # "20 triệu trở lên"
             ]
             
-            for pattern in price_patterns:
+            for pattern, pattern_type in price_patterns:
                 match = re.search(pattern, query_lower)
                 if match:
-                    if 'từ' in pattern and 'đến' in pattern:
-                        # Range pattern
+                    if pattern_type == 'range':
+                        # Range pattern: từ X đến Y
                         min_price = int(match.group(1)) * 1000000
                         max_price = int(match.group(2)) * 1000000
                         metadata["price_range"] = (min_price, max_price)
-                    elif 'dưới' in pattern or 'trở xuống' in pattern:
-                        # Max price
+                    elif pattern_type == 'max':
+                        # Max price: dưới X hoặc X trở xuống
                         max_price = int(match.group(1)) * 1000000
                         metadata["price_range"] = (0, max_price)
-                    elif 'trên' in pattern or 'trở lên' in pattern:
-                        # Min price
+                    elif pattern_type == 'min':
+                        # Min price: trên X hoặc X trở lên
                         min_price = int(match.group(1)) * 1000000
-                        metadata["price_range"] = (min_price, float('inf'))
-                    elif 'khoảng' in pattern:
-                        # Approximate price
+                        metadata["price_range"] = (min_price, 999999999)  # Large finite value
+                        logger.info(f"Extracted 'trên' price - min: {min_price}, max: 999999999")
+                    elif pattern_type == 'approx':
+                        # Approximate price: khoảng X
                         price = int(match.group(1)) * 1000000
                         tolerance = price * 0.2  # 20% tolerance
                         metadata["price_range"] = (price - tolerance, price + tolerance)
+                    logger.info(f"Extracted price range from query: {metadata['price_range']}")
                     break
             
             # Extract brand
@@ -686,17 +702,18 @@ class RAGModel:
             for brand in brands:
                 if brand in query_lower:
                     metadata["brand"] = brand.title()
+                    logger.info(f"Extracted brand from query: {metadata['brand']}")
                     break
             
             # Extract specs
             specs_patterns = {
-                'pin': r'pin\s+(khỏe|tốt|lâu|dài)',
-                'camera': r'camera\s+(tốt|đẹp|chụp\s+ảnh)',
+                'pin': r'pin\s+(khỏe|tốt|lâu|dài|cao)',
+                'camera': r'camera\s+(tốt|đẹp|chụp\s+ảnh|chất\s+lượng)',
                 'ram': r'(\d+)\s*gb\s*ram',
-                'rom': r'(\d+)\s*gb\s*rom',
-                'màn hình': r'màn\s+hình\s+(\d+\.?\d*)\s*inch',
-                'chơi game': r'chơi\s+game',
-                'chụp ảnh': r'chụp\s+ảnh'
+                'rom': r'(\d+)\s*gb\s*(?:rom|bộ nhớ|storage)',
+                'màn hình': r'màn\s+hình\s+(\d+\.?\d*)\s*(?:inch|")',
+                'chơi game': r'chơi\s+game|gaming',
+                'chụp ảnh': r'chụp\s+ảnh|photography|photo'
             }
             
             for spec, pattern in specs_patterns.items():
@@ -704,8 +721,10 @@ class RAGModel:
                 if match:
                     if spec in ['ram', 'rom', 'màn hình']:
                         metadata["specs"][spec] = match.group(1)
+                        logger.info(f"Extracted {spec} from query: {match.group(1)}")
                     else:
                         metadata["specs"][spec] = True
+                        logger.info(f"Extracted {spec} requirement from query")
             
             return metadata
             

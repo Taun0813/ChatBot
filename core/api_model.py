@@ -7,9 +7,6 @@ import asyncio
 import logging
 import httpx
 from typing import Dict, Any, Optional, List
-import json
-import os
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -22,19 +19,18 @@ class APIModel:
     - Payment service integration (Spring Boot)
     - Warranty service integration (Spring Boot)
     - Product service integration (Spring Boot)
-    - Mock service support for testing
+    - Spring Boot service integration
     """
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
-        self.mock_data_dir = "services/mock"
         
         # Spring Boot service URLs
         self.services = {
-            "order": self.config.get("order_service_url", "http://localhost:8081/api/orders"),
-            "payment": self.config.get("payment_service_url", "http://localhost:8082/api/payments"),
-            "warranty": self.config.get("warranty_service_url", "http://localhost:8083/api/warranties"),
-            "product": self.config.get("product_service_url", "http://localhost:8084/api/products")
+            "order": self.config.get("order_service_url", "http://localhost:8181/api/orders"),
+            "payment": self.config.get("payment_service_url", "http://localhost:8181/api/payments"),
+            "warranty": self.config.get("warranty_service_url", "http://localhost:8181/api/warranties"),
+            "product": self.config.get("product_service_url", "http://localhost:8181/api/products")
         }
         
         # API Keys for Spring Boot services
@@ -47,6 +43,9 @@ class APIModel:
         
         # Timeout settings
         self.timeout = self.config.get("api_timeout", 30)
+        
+        # When False: skip real API calls (no mock fallback)
+        self.enable_api_calls = self.config.get("enable_api_calls", True)
         
         # HTTP client
         self.client = None
@@ -109,31 +108,6 @@ class APIModel:
             logger.error(f"Error calling {service_name}: {e}")
             return {"error": str(e)}
     
-    async def _fallback_to_mock(self, service_name: str, endpoint: str) -> Dict[str, Any]:
-        """Fallback to mock data when Spring Boot service is unavailable"""
-        try:
-            mock_file = os.path.join(self.mock_data_dir, f"mock_{service_name}.json")
-            
-            if not os.path.exists(mock_file):
-                return {"error": f"Mock data not found for {service_name}"}
-            
-            with open(mock_file, 'r', encoding='utf-8') as f:
-                mock_data = json.load(f)
-            
-            # Simple endpoint matching
-            if "orders" in endpoint:
-                return mock_data.get("orders", [])
-            elif "payments" in endpoint:
-                return mock_data.get("payments", [])
-            elif "warranties" in endpoint:
-                return mock_data.get("warranties", [])
-            else:
-                return mock_data
-            
-        except Exception as e:
-            logger.error(f"Error loading mock data for {service_name}: {e}")
-            return {"error": str(e)}
-        
     async def handle_order_request(
         self, 
         message: str,
@@ -160,25 +134,19 @@ class APIModel:
             if not order_id:
                 return "Tôi cần số đơn hàng để tra cứu thông tin. Bạn có thể cung cấp số đơn hàng không?"
             
-            # Try Spring Boot service first
-            try:
-                order_info = await self._call_spring_boot_service(
-                    service_name="order",
-                    endpoint=f"/{order_id}",
-                    method="GET"
-                )
-                
-                if "error" in order_info:
-                    # Fallback to mock data
-                    logger.warning(f"Spring Boot service error, using mock data: {order_info['error']}")
-                    order_info = await self._get_order_info(order_id)
-                else:
-                    # Transform Spring Boot response to our format
-                    order_info = self._transform_order_response(order_info)
-                    
-            except Exception as e:
-                logger.warning(f"Spring Boot service unavailable, using mock data: {e}")
-                order_info = await self._get_order_info(order_id)
+            if not self.enable_api_calls:
+                return "Tính năng gọi API hiện đang tắt nên không thể tra cứu đơn hàng."
+
+            order_info = await self._call_spring_boot_service(
+                service_name="order",
+                endpoint=f"/{order_id}",
+                method="GET"
+            )
+            if "error" in order_info:
+                logger.warning(f"Spring Boot service error: {order_info['error']}")
+                return "Xin lỗi, hiện không thể tra cứu thông tin đơn hàng. Vui lòng thử lại sau."
+
+            order_info = self._transform_order_response(order_info)
             
             if not order_info:
                 return f"Không tìm thấy đơn hàng với số {order_id}. Vui lòng kiểm tra lại số đơn hàng."
@@ -208,22 +176,19 @@ class APIModel:
             if not order_id:
                 return "Tôi cần số đơn hàng để tra cứu thông tin thanh toán. Bạn có thể cung cấp số đơn hàng không?"
             
-            # Try Spring Boot service
-            try:
-                payment_info = await self._call_spring_boot_service(
-                    service_name="payment",
-                    endpoint=f"/order/{order_id}",
-                    method="GET"
-                )
-                
-                if "error" in payment_info:
-                    payment_info = await self._get_payment_info(order_id)
-                else:
-                    payment_info = self._transform_payment_response(payment_info)
-                    
-            except Exception as e:
-                logger.warning(f"Spring Boot payment service unavailable: {e}")
-                payment_info = await self._get_payment_info(order_id)
+            if not self.enable_api_calls:
+                return "Tính năng gọi API hiện đang tắt nên không thể tra cứu thanh toán."
+
+            payment_info = await self._call_spring_boot_service(
+                service_name="payment",
+                endpoint=f"/order/{order_id}",
+                method="GET"
+            )
+            if "error" in payment_info:
+                logger.warning(f"Spring Boot payment error: {payment_info['error']}")
+                return "Xin lỗi, hiện không thể tra cứu thông tin thanh toán. Vui lòng thử lại sau."
+
+            payment_info = self._transform_payment_response(payment_info)
             
             if not payment_info:
                 return f"Không tìm thấy thông tin thanh toán cho đơn hàng {order_id}."
@@ -251,29 +216,27 @@ class APIModel:
             if not product_id and not order_id:
                 return "Tôi cần số sản phẩm hoặc đơn hàng để tra cứu thông tin bảo hành."
             
-            # Try Spring Boot service
-            try:
-                if product_id:
-                    warranty_info = await self._call_spring_boot_service(
-                        service_name="warranty",
-                        endpoint=f"/product/{product_id}",
-                        method="GET"
-                    )
-                else:
-                    warranty_info = await self._call_spring_boot_service(
-                        service_name="warranty",
-                        endpoint=f"/order/{order_id}",
-                        method="GET"
-                    )
-                
-                if "error" in warranty_info:
-                    warranty_info = await self._get_warranty_info(product_id or order_id)
-                else:
-                    warranty_info = self._transform_warranty_response(warranty_info)
-                    
-            except Exception as e:
-                logger.warning(f"Spring Boot warranty service unavailable: {e}")
-                warranty_info = await self._get_warranty_info(product_id or order_id)
+            if not self.enable_api_calls:
+                return "Tính năng gọi API hiện đang tắt nên không thể tra cứu bảo hành."
+
+            if product_id:
+                warranty_info = await self._call_spring_boot_service(
+                    service_name="warranty",
+                    endpoint=f"/product/{product_id}",
+                    method="GET"
+                )
+            else:
+                warranty_info = await self._call_spring_boot_service(
+                    service_name="warranty",
+                    endpoint=f"/order/{order_id}",
+                    method="GET"
+                )
+
+            if "error" in warranty_info:
+                logger.warning(f"Spring Boot warranty error: {warranty_info['error']}")
+                return "Xin lỗi, hiện không thể tra cứu thông tin bảo hành. Vui lòng thử lại sau."
+
+            warranty_info = self._transform_warranty_response(warranty_info)
             
             if not warranty_info:
                 return f"Không tìm thấy thông tin bảo hành."
@@ -430,30 +393,6 @@ Bạn cần hỗ trợ gì cụ thể?"""
         
         return None
     
-    async def _get_order_info(self, order_id: str) -> Optional[Dict[str, Any]]:
-        """Get order information (mock implementation)"""
-        try:
-            # Load mock order data
-            mock_file = os.path.join(self.mock_data_dir, "mock_order.json")
-            
-            if not os.path.exists(mock_file):
-                logger.warning("Mock order file not found")
-                return None
-            
-            with open(mock_file, 'r', encoding='utf-8') as f:
-                mock_orders = json.load(f)
-            
-            # Find order by ID
-            for order in mock_orders.get("orders", []):
-                # Check both id and orderId (camelCase from mock/spring boot)
-                if str(order.get("id")) == order_id or str(order.get("orderId")) == order_id:
-                    return self._transform_order_response(order)
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"Failed to get order info: {e}")
-            return None
     
     def _format_order_response(self, order_info: Dict[str, Any]) -> str:
         """Format order information into response"""
@@ -496,46 +435,4 @@ Bạn cần hỗ trợ gì cụ thể?"""
             logger.error(f"Failed to format order response: {e}")
             return f"Đơn hàng #{order_info.get('order_id', 'Unknown')} - Trạng thái: {order_info.get('status', 'Unknown')}"
     
-    async def _get_payment_info(self, order_id: str) -> Optional[Dict[str, Any]]:
-        """Get payment information for order"""
-        try:
-            mock_file = os.path.join(self.mock_data_dir, "mock_payment.json")
-            
-            if not os.path.exists(mock_file):
-                return None
-            
-            with open(mock_file, 'r', encoding='utf-8') as f:
-                mock_payments = json.load(f)
-            
-            for payment in mock_payments.get("payments", []):
-                # Check orderId (camelCase from mock/spring boot)
-                if str(payment.get("orderId")) == order_id:
-                    return self._transform_payment_response(payment)
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"Failed to get payment info: {e}")
-            return None
     
-    async def _get_warranty_info(self, product_id: str) -> Optional[Dict[str, Any]]:
-        """Get warranty information for product"""
-        try:
-            mock_file = os.path.join(self.mock_data_dir, "mock_warranty.json")
-            
-            if not os.path.exists(mock_file):
-                return None
-            
-            with open(mock_file, 'r', encoding='utf-8') as f:
-                mock_warranties = json.load(f)
-            
-            for warranty in mock_warranties.get("warranties", []):
-                # Check productId or orderId (camelCase from mock/spring boot)
-                if str(warranty.get("productId")) == product_id or str(warranty.get("orderId")) == product_id:
-                    return self._transform_warranty_response(warranty)
-            
-            return None
-                        
-        except Exception as e:
-            logger.error(f"Failed to get warranty info: {e}")
-            return None

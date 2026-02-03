@@ -1,0 +1,59 @@
+# Docker Compose - AI Agent for E-commerce
+# Chạy: docker-compose up -d
+# Xem logs: docker-compose logs -f ai-agent
+
+version: '3.8'
+
+services:
+  ai-agent:
+    build:
+      context: .
+      dockerfile: dockerfile
+    container_name: ai-agent-ecommerce
+    ports:
+      - "8000:8000"
+    environment:
+      - API_HOST=0.0.0.0
+      - PORT=8000
+      - MODEL_LOADER_BACKEND=${MODEL_LOADER_BACKEND:-gemini}
+      - MODEL_NAME=${MODEL_NAME:-gemini-2.5-flash}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_ENVIRONMENT=${PINECONE_ENVIRONMENT:-us-west1-gcp-free}
+      - PINECONE_INDEX_NAME=${PINECONE_INDEX_NAME:-product-search}
+      - ENABLE_PERSONALIZATION=${ENABLE_PERSONALIZATION:-false}
+      - ENABLE_RECOMMENDATIONS=${ENABLE_RECOMMENDATIONS:-false}
+      - ENABLE_RL_LEARNING=${ENABLE_RL_LEARNING:-false}
+    env_file:
+      - .env
+    volumes:
+      # Mount data folder for init_data.py output (optional)
+      - ./data/processed:/app/data/processed
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # Redis - Optional, dùng khi ENABLE_CACHING=true và CACHE_TYPE=redis
+  redis:
+    image: redis:7-alpine
+    container_name: ai-agent-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    profiles:
+      - full  # Chỉ chạy khi: docker-compose --profile full up
+
+volumes:
+  redis_data:

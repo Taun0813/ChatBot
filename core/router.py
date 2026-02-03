@@ -575,27 +575,37 @@ class AgnoRouter:
         """Initialize all models and services"""
         try:
             logger.info("Initializing Agno Router...")
-            
-            # Initialize Pinecone client
-            await self._initialize_pinecone()
+            rag_enabled = self.config.rag_config.get("enabled", False)
             
             # Initialize cache manager
             await self._initialize_cache_manager()
             
-            # Initialize model loader
+            # Initialize model loader (required for both RAG and conversation)
             await self._initialize_model_loader()
             
-            # Initialize RAG model
-            await self._initialize_rag_model()
+            # Initialize Pinecone + RAG only when enabled (requires PINECONE_API_KEY)
+            if rag_enabled:
+                await self._initialize_pinecone()
+                await self._initialize_rag_model()
+                logger.info("RAG enabled - Pinecone and RAG model initialized")
+            else:
+                self.pinecone_client = None
+                self.rag_model = None
+                logger.info("RAG disabled - search will use conversation fallback")
             
             # Initialize interaction model
             await self._initialize_interaction_model()
             
-            # Initialize API model
+            # Initialize API model (with config for Spring Boot URLs)
             await self._initialize_api_model()
             
-            # Initialize personalization model
-            await self._initialize_personalization_model()
+            # Initialize personalization model (skip when disabled)
+            personalization_config = self.config.personalization_config or {}
+            if personalization_config.get("enable_personalization", False):
+                await self._initialize_personalization_model()
+            else:
+                self.personalization_model = None
+                logger.info("Personalization disabled")
             
             # Initialize ML router for hybrid mode
             if self.enable_hybrid:
@@ -677,11 +687,13 @@ class AgnoRouter:
                 model_name=model_config.get("model_name", "gemini-1.5-flash"),
                 max_tokens=model_config.get("max_tokens", 2048),
                 temperature=model_config.get("temperature", 0.7),
-                top_p=model_config.get("top_p", 0.9)
+                top_p=model_config.get("top_p", 0.9),
+                api_key=model_config.get("api_key")
             )
             
-            # Explicitly initialize the model loader
-            await self.model_loader.initialize()
+            success = await self.model_loader.initialize()
+            if not success:
+                raise RuntimeError(f"Model loader failed to initialize: {model_config.get('backend')}")
             
             logger.info(f"Model loader initialized: {model_config.get('backend')}")
             
@@ -721,13 +733,25 @@ class AgnoRouter:
             raise
     
     async def _initialize_api_model(self):
-        """Initialize API model"""
+        """Initialize API model with Spring Boot service config"""
         try:
             from core.api_model import APIModel
             
-            self.api_model = APIModel()
+            api_config = self.config.api_config or {}
+            self.api_model = APIModel(config={
+                "order_service_url": api_config.get("order_service_url"),
+                "payment_service_url": api_config.get("payment_service_url"),
+                "warranty_service_url": api_config.get("warranty_service_url"),
+                "product_service_url": api_config.get("product_service_url"),
+                "order_service_api_key": api_config.get("order_service_api_key"),
+                "payment_service_api_key": api_config.get("payment_service_api_key"),
+                "warranty_service_api_key": api_config.get("warranty_service_api_key"),
+                "product_service_api_key": api_config.get("product_service_api_key"),
+                "api_timeout": api_config.get("api_timeout", 30),
+                "enable_api_calls": api_config.get("enable_api_calls", False),
+            })
             
-            logger.info("API model initialized")
+            logger.info("API model initialized (enable_api_calls=%s)", api_config.get("enable_api_calls", False))
             
         except Exception as e:
             logger.error(f"Failed to initialize API model: {e}")
@@ -1042,6 +1066,10 @@ class AgnoRouter:
     ) -> Dict[str, Any]:
         """Handle product search requests using RAG with personalization and caching"""
         try:
+            # RAG disabled: fallback to conversation model
+            if not self.rag_model:
+                return await self._handle_search_fallback(message, user_id, context)
+            
             # Check cache first
             cache_key = {
                 "type": "search",
@@ -1130,6 +1158,56 @@ class AgnoRouter:
                 "metadata": {"error": str(e)}
             }
     
+    async def _handle_search_fallback(
+        self,
+        message: str,
+        user_id: Optional[str],
+        context: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Fallback when RAG is disabled: use LLM to generate helpful response"""
+        try:
+            response = await self.interaction_model.generate_response(
+                message=message,
+                user_id=user_id,
+                context=context or {}
+            )
+            return {
+                "response": response if isinstance(response, str) else str(response.get("response", response)),
+                "intent": "search",
+                "confidence": 0.5,
+                "metadata": {
+                    "rag_disabled": True,
+                    "model_used": "conversation_fallback",
+                    "hint": "Set RAG_ENABLED=true and run init_data.py for product search"
+                }
+            }
+        except Exception as e:
+            logger.warning(f"Search fallback error: {e}")
+            return {
+                "response": "Chức năng tìm kiếm sản phẩm chưa được bật. Vui lòng cấu hình RAG_ENABLED=true và chạy init_data.py để load dữ liệu sản phẩm.",
+                "intent": "search",
+                "confidence": 0.3,
+                "metadata": {"rag_disabled": True, "error": str(e)}
+            }
+
+    def _is_authenticated(self, user_id: Optional[str], context: Optional[Dict[str, Any]]) -> bool:
+        """Check if user is authenticated (has user_id or auth flag/token in context)."""
+        if user_id:
+            return True
+        context = context or {}
+        return bool(context.get("is_authenticated") or context.get("jwt_token"))
+
+    def _auth_required_response(self, intent: str) -> Dict[str, Any]:
+        """Standard response for actions that require login."""
+        return {
+            "response": "Bạn cần đăng nhập để thực hiện chức năng này. Vui lòng đăng nhập rồi thử lại.",
+            "intent": intent,
+            "confidence": 0.6,
+            "metadata": {
+                "auth_required": True
+            }
+        }
+    
     async def _handle_order_request(
         self, 
         message: str, 
@@ -1138,6 +1216,9 @@ class AgnoRouter:
     ) -> Dict[str, Any]:
         """Handle order-related requests using API model"""
         try:
+            if not self._is_authenticated(user_id, context):
+                return self._auth_required_response("order")
+
             # Use API model to handle order requests
             response = await self.api_model.handle_order_request(
                 message=message,
@@ -1171,6 +1252,9 @@ class AgnoRouter:
     ) -> Dict[str, Any]:
         """Handle API-related requests"""
         try:
+            if not self._is_authenticated(user_id, context):
+                return self._auth_required_response("api")
+
             # Use API model to handle general API requests
             response = await self.api_model.handle_general_request(
                 message=message,
