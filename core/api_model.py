@@ -444,9 +444,10 @@ Bạn cần hỗ trợ gì cụ thể?"""
                 mock_orders = json.load(f)
             
             # Find order by ID
-            for order in mock_orders:
-                if order.get("order_id") == order_id:
-                    return order
+            for order in mock_orders.get("orders", []):
+                # Check both id and orderId (camelCase from mock/spring boot)
+                if str(order.get("id")) == order_id or str(order.get("orderId")) == order_id:
+                    return self._transform_order_response(order)
             
             return None
             
@@ -495,7 +496,7 @@ Bạn cần hỗ trợ gì cụ thể?"""
             logger.error(f"Failed to format order response: {e}")
             return f"Đơn hàng #{order_info.get('order_id', 'Unknown')} - Trạng thái: {order_info.get('status', 'Unknown')}"
     
-    async def get_payment_info(self, order_id: str) -> Optional[Dict[str, Any]]:
+    async def _get_payment_info(self, order_id: str) -> Optional[Dict[str, Any]]:
         """Get payment information for order"""
         try:
             mock_file = os.path.join(self.mock_data_dir, "mock_payment.json")
@@ -506,9 +507,10 @@ Bạn cần hỗ trợ gì cụ thể?"""
             with open(mock_file, 'r', encoding='utf-8') as f:
                 mock_payments = json.load(f)
             
-            for payment in mock_payments:
-                if payment.get("order_id") == order_id:
-                    return payment
+            for payment in mock_payments.get("payments", []):
+                # Check orderId (camelCase from mock/spring boot)
+                if str(payment.get("orderId")) == order_id:
+                    return self._transform_payment_response(payment)
             
             return None
             
@@ -516,7 +518,7 @@ Bạn cần hỗ trợ gì cụ thể?"""
             logger.error(f"Failed to get payment info: {e}")
             return None
     
-    async def get_warranty_info(self, product_id: str) -> Optional[Dict[str, Any]]:
+    async def _get_warranty_info(self, product_id: str) -> Optional[Dict[str, Any]]:
         """Get warranty information for product"""
         try:
             mock_file = os.path.join(self.mock_data_dir, "mock_warranty.json")
@@ -527,9 +529,10 @@ Bạn cần hỗ trợ gì cụ thể?"""
             with open(mock_file, 'r', encoding='utf-8') as f:
                 mock_warranties = json.load(f)
             
-            for warranty in mock_warranties:
-                if warranty.get("product_id") == product_id:
-                    return warranty
+            for warranty in mock_warranties.get("warranties", []):
+                # Check productId or orderId (camelCase from mock/spring boot)
+                if str(warranty.get("productId")) == product_id or str(warranty.get("orderId")) == product_id:
+                    return self._transform_warranty_response(warranty)
             
             return None
                         

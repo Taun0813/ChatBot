@@ -219,3 +219,5 @@ Thumbs.db
 # data/raw/
 # models/
 # checkpoints/
+
+.agent

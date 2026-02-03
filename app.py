@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
         config = RouterConfig(
             rag_config={
                 "name": "rag",
-                "enabled": False,  # Disable RAG to prevent Pinecone connection issues
+                "enabled": True,  # Disable RAG to prevent Pinecone connection issues
                 "pinecone_config": {
                     "api_key": settings.pinecone_api_key,
                     "environment": settings.pinecone_environment,

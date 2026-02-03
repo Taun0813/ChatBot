@@ -382,6 +382,9 @@ class RAGModel:
     async def _generate_embedding(self, text: str) -> List[float]:
         """Generate embedding via Pinecone managed model"""
         try:
+            if not self.pinecone_client or not self.pinecone_client.pc:
+                raise ValueError("Pinecone client not initialized")
+            
             pc = self.pinecone_client.pc  # đã khởi tạo từ adapters/pinecone_client
             response = pc.inference.embed(
                 model=self.embedding_model_name,
@@ -455,8 +458,29 @@ class RAGModel:
             
         except Exception as e:
             logger.error(f"Failed to search products: {e}")
-            raise
+            # Gracefully handle search failure
+            return []
     
+    def _parse_specifications(self, specs: Any) -> Dict[str, str]:
+        """Parse specifications from string or dict"""
+        try:
+            if isinstance(specs, dict):
+                return specs
+            
+            if isinstance(specs, str) and specs:
+                parsed = {}
+                # Handle "; " separated key: value pairs
+                items = specs.split("; ")
+                for item in items:
+                    if ": " in item:
+                        current_key, current_value = item.split(": ", 1)
+                        parsed[current_key.strip()] = current_value.strip()
+                return parsed
+                
+            return {}
+        except Exception:
+            return {}
+
     async def _process_search_results(
         self, 
         search_results: List[Dict[str, Any]],
@@ -479,7 +503,7 @@ class RAGModel:
                     "rating": product_info.get("rating", 0),
                     "reviews_count": product_info.get("reviews_count", 0),
                     "availability": product_info.get("availability", "In Stock"),
-                    "specifications": product_info.get("specifications", {}),
+                    "specifications": self._parse_specifications(product_info.get("specifications", {})),
                     "similarity_score": result["score"],
                     "relevance_score": await self._calculate_relevance_score(
                         product_info, user_id
@@ -579,6 +603,9 @@ class RAGModel:
             await self.pinecone_client.upsert_vectors([vector_data], namespace=namespace)
             logger.info(f"Successfully upserted product: {product_id}")
             return True
+        except ValueError as ve:
+            logger.warning(f"Upsert skipped: {ve}")
+            return False
         except Exception as e:
             logger.error(f"Failed to upsert product: {e}")
             return False

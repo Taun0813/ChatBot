@@ -8,7 +8,7 @@ import logging
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 import pinecone
-from pinecone.core.client.exceptions import PineconeException
+from pinecone.exceptions import PineconeException
 
 # Handle different Pinecone versions
 Pinecone = pinecone.Pinecone
@@ -63,11 +63,28 @@ class PineconeClient:
                 await self._create_index()
             else:
                 logger.info(f"Using existing index: {self.index_name}")
-                self.index = self.pc.Index(self.index_name)
-            
             # Get index stats
+            self.index = self.pc.Index(self.index_name)
             stats = self.index.describe_index_stats()
             logger.info(f"Index stats: {stats}")
+            
+            # Check dimension mismatch
+            if int(stats.dimension) != int(self.dimension):
+                logger.warning(f"Dimension mismatch! Index: {stats.dimension}, Config: {self.dimension}. Recreating index...")
+                # Delete index
+                self.pc.delete_index(self.index_name)
+                
+                # Wait for deletion
+                import time
+                time.sleep(5)
+                
+                # Recreate
+                await self._create_index()
+                
+                # Re-get index
+                self.index = self.pc.Index(self.index_name)
+                stats = self.index.describe_index_stats()
+                logger.info(f"New index stats: {stats}")
             
         except Exception as e:
             logger.error(f"Failed to initialize Pinecone: {e}")
@@ -231,7 +248,10 @@ class PineconeClient:
             
             if price_range:
                 min_price, max_price = price_range
-                filter_dict["price"] = {"$gte": min_price, "$lte": max_price}
+                price_filter = {"$gte": min_price}
+                if max_price != float('inf'):
+                    price_filter["$lte"] = max_price
+                filter_dict["price"] = price_filter
             
             if brand:
                 filter_dict["brand"] = {"$eq": brand}

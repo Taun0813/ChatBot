@@ -610,6 +610,11 @@ class AgnoRouter:
     
     async def _initialize_pinecone(self):
         """Initialize Pinecone vector database client"""
+        # Check if RAG is enabled
+        if not self.config.rag_config.get("enabled", True):
+            logger.info("RAG is disabled, skipping Pinecone initialization")
+            return
+
         try:
             from adapters.pinecone_client import PineconeClient
             
@@ -675,6 +680,9 @@ class AgnoRouter:
                 top_p=model_config.get("top_p", 0.9)
             )
             
+            # Explicitly initialize the model loader
+            await self.model_loader.initialize()
+            
             logger.info(f"Model loader initialized: {model_config.get('backend')}")
             
         except Exception as e:
@@ -731,7 +739,7 @@ class AgnoRouter:
             from core.personalization_model import PersonalizationModel
             from personalization.profile_manager import ProfileManager
             from personalization.recommender import Recommender
-            from cache.cache_manager import CacheManager
+
             
             personalization_config = self.config.personalization_config
             
