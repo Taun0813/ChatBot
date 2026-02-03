@@ -1,21 +1,21 @@
 # AI Agent System - Hybrid Orchestrator
 
-Intelligent AI Agent system for e-commerce with **Hybrid Orchestrator** combining rule-based and ML-based routing, using real dataset with 27,000+ phone products.
+Intelligent AI Agent system for e-commerce with **Hybrid Orchestrator** combining rule-based and ML-based routing. Hỗ trợ 900+ điện thoại và đa danh mục (Laptop, Tablet, Phụ kiện).
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115.6+-green.svg)](https://fastapi.tiangolo.com)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.5.1+-red.svg)](https://pytorch.org)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://docker.com)
 [![Pinecone](https://img.shields.io/badge/Pinecone-5.0.1+-orange.svg)](https://pinecone.io)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## Key Features
 
 - **Hybrid Orchestrator**: Combines rule-based + ML-based routing (85-95% accuracy)
-- **Real Dataset**: 27,000+ phone products from OnePlus, Samsung, Apple, Xiaomi, Motorola, Realme, Nothing
-- **RAG System**: Semantic search with Pinecone vector database (v5.0.1+)
-- **Smart Conversation**: Natural interaction with context-aware routing
-- **API Integration**: Connect with microservices (orders, payments, warranty)
-- **Personalization**: Learn from user behavior and provide relevant recommendations
+- **Multi-category Dataset**: Điện thoại, Laptop, Tablet, Phụ kiện (CSV + JSON)
+- **RAG System**: Semantic search with Pinecone (bật qua `RAG_ENABLED=true`)
+- **Smart Conversation**: Natural interaction, fallback khi RAG tắt
+- **API Integration**: Spring Boot microservices (orders, payments, warranty) qua `ENABLE_API_CALLS`
+- **Personalization**: User behavior, recommendations (tùy chọn)
 - **Multi-model**: Support multiple LLMs (Gemini 0.8.3+, Groq 0.9.0+, Ollama 0.4.2+, OpenAI 1.58.1+, Claude 0.40.0+)
 - **Caching**: Smart caching system with Redis 5.2.1+ and Memory cache
 - **Monitoring**: Real-time performance monitoring with detailed dashboard
@@ -71,7 +71,12 @@ ai_agent/
 ├── config.py                     # Configuration management
 ├── requirements.txt              # Python dependencies
 ├── env.example                   # Environment variables template
-├── init_data.py                  # Data initialization
+├── init_data.py                  # Data initialization (CSV + JSON)
+├── dockerfile                    # Docker build
+├── docker-compose.yml            # Docker Compose (AI Agent + Redis)
+├── railway.json                  # Railway deployment config
+├── DEPLOYMENT.md                 # Hướng dẫn deploy chi tiết
+├── ECOMMERCE_AI_AGENT_ROADMAP.md # Roadmap E-commerce
 │
 ├── core/                         # Core logic (Hybrid Orchestrator)
 │   ├── models/                   # Agent models
@@ -125,12 +130,13 @@ ai_agent/
 │   ├── ingest.py                 # Data ingestion
 │   ├── process_dataset.py        # Dataset processing
 │   ├── processed/                # Processed data
+│   │   └── sample_products_extra.json  # Mẫu Laptop, Tai nghe, Sạc
 │   ├── profiles/                 # User profiles
-│   └── schema/                   # Data schemas
+│   └── schema/                   # Product schemas (đa danh mục)
 │
 ├── training/                     # Model training & fine-tuning
-│   ├── dataset/                  # Real dataset
-│   │   └── dataset.json          # 27,000+ real phone products
+│   ├── dataset/                  # Training dataset
+│   │   └── dataset.json          # Training conversations
 │   ├── prepare_data.py           # Data preparation
 │   ├── finetune.py               # Model fine-tuning
 │   ├── evaluate.py               # Model evaluation
@@ -140,6 +146,19 @@ ai_agent/
     ├── logger.py                 # Logging utilities
     └── helpers.py                # Helper functions
 ```
+
+## Quick Start
+
+```bash
+git clone <repository-url>
+cd ai-agent
+pip install -r requirements.txt
+cp env.example .env   # Điền GEMINI_API_KEY
+python app.py         # http://localhost:8000
+curl http://localhost:8000/health
+```
+
+---
 
 ## Installation
 
@@ -182,19 +201,31 @@ pip install fastapi==0.115.6 uvicorn[standard]==0.32.1 gunicorn==23.0.0 redis[hi
 ### 4. Configure environment
 ```bash
 cp env.example .env
-# Edit .env with your API keys
-# IMPORTANT: PINECONE_API_KEY is required to use vector database
+# Chỉ cần GEMINI_API_KEY hoặc GROQ_API_KEY để chạy
+# PINECONE_API_KEY chỉ cần khi RAG_ENABLED=true
 ```
 
-### 5. Initialize data with real dataset
-```bash
-# Load 27,000+ real phone products into Pinecone
-python init_data.py
-```
-
-### 6. Run application
+### 5. Run application
 ```bash
 python app.py
+# App chạy được ngay (RAG tắt mặc định, dùng conversation fallback cho search)
+```
+
+### 6. (Optional) Bật RAG - Load sản phẩm lên Pinecone
+```bash
+# Trong .env: RAG_ENABLED=true, điền PINECONE_API_KEY
+# Load điện thoại từ CSV
+python init_data.py
+
+# Hoặc load sản phẩm Laptop/Tablet/Phụ kiện từ JSON
+python init_data.py data/processed/sample_products_extra.json
+```
+
+### 7. (Optional) Docker
+```bash
+docker-compose up -d
+# Hoặc: docker build -f dockerfile -t ai-agent:v1 .
+# Chi tiết: xem DEPLOYMENT.md
 ```
 
 ## Training & Fine-tuning (Optional)
@@ -256,29 +287,37 @@ python training/evaluate.py
 
 ### Environment Variables
 ```bash
-# Free APIs (Recommended)
-GEMINI_API_KEY=your_gemini_api_key
+# API Keys (chọn 1 trong các key miễn phí)
+GEMINI_API_KEY=your_gemini_api_key   # Khuyến nghị
 GROQ_API_KEY=your_groq_api_key
 OLLAMA_BASE_URL=http://localhost:11434
 
 # Optional Paid APIs
-OPENAI_API_KEY=your_openai_api_key  # v1.58.1+
-ANTHROPIC_API_KEY=your_anthropic_api_key  # v0.40.0+
-COHERE_API_KEY=your_cohere_api_key  # v5.5.3+
+OPENAI_API_KEY=your_openai_api_key
+ANTHROPIC_API_KEY=your_anthropic_api_key
+COHERE_API_KEY=your_cohere_api_key
 
-# Vector Database (Required for RAG)
-PINECONE_API_KEY=your_pinecone_api_key  # v5.0.1+
+# Model
+MODEL_LOADER_BACKEND=gemini
+MODEL_NAME=gemini-2.5-flash
 
-# Configuration
-MODEL_LOADER_BACKEND=gemini  # gemini, groq, ollama, openai, claude, cohere
-ENABLE_PERSONALIZATION=true
-ENABLE_RECOMMENDATIONS=true
-ENABLE_RL_LEARNING=true
+# Phase 1 - RAG & API (E-commerce)
+RAG_ENABLED=false                    # Bật khi đã có Pinecone + init_data
+ENABLE_API_CALLS=false               # Bật khi đã có Spring Boot backend
 
-# Performance Settings
-REDIS_URL=redis://localhost:6379
-CACHE_TTL=3600
-MAX_CONCURRENT_REQUESTS=100
+# Pinecone (chỉ cần khi RAG_ENABLED=true)
+PINECONE_API_KEY=your_pinecone_api_key
+PINECONE_INDEX_NAME=product-search
+PINECONE_DIMENSION=1024
+
+# Spring Boot Services (khi ENABLE_API_CALLS=true)
+ORDER_SERVICE_URL=http://localhost:8181/api/orders
+PRODUCT_SERVICE_URL=http://localhost:8181/api/products
+PAYMENT_SERVICE_URL=http://localhost:8181/api/payments
+
+# Personalization (tùy chọn)
+ENABLE_PERSONALIZATION=false
+ENABLE_RECOMMENDATIONS=false
 ```
 
 ## Usage
@@ -375,21 +414,19 @@ from core.router import AgnoRouter, RouterConfig
 
 async def main():
     config = RouterConfig(
-        rag_config={},
+        rag_config={"enabled": False, "pinecone_config": {}, "model_loader_config": {}},
         interaction_config={},
-        api_config={}
+        api_config={"enable_api_calls": False},
+        personalization_config={"enable_personalization": False},
+        hybrid_config={"enable_hybrid": True}
     )
-    
     router = AgnoRouter(config)
     await router.initialize()
-    
     response = await router.process_request(
         message="Hello, I need advice about phones",
         user_id="user123"
     )
-    
     print(response["response"])
-    
     await router.cleanup()
 
 asyncio.run(main())
@@ -411,12 +448,11 @@ asyncio.run(main())
 - **API Agent**: External service integration
 - **Performance Tracking**: Real-time metrics and monitoring
 
-### 3. Real Dataset Integration
-- **27,000+ real phone products** from OnePlus, Samsung, Apple, Xiaomi, Motorola, Realme, Nothing
-- **Detailed specifications**: CPU, RAM, ROM, camera, battery, screen, 5G, NFC, fast charging
-- **Real pricing**: From 19,989 VND to millions of VND
-- **Ratings and reviews** from real users
-- **Auto-conversion**: Automatically convert format to fit RAG system
+### 3. Multi-category Dataset
+- **Điện thoại**: 900+ sản phẩm (`Mobiles Dataset (2025).csv`) - Apple, Samsung, OnePlus, Xiaomi, etc.
+- **Laptop, Tablet, Phụ kiện**: Hỗ trợ JSON (`data/processed/sample_products_extra.json`)
+- **Schema**: `data/schema/product_schema.py` - Điện thoại, Laptop, Tablet, Tai nghe, Sạc dự phòng, ...
+- **Init**: `python init_data.py [file.csv|file.json]` - Tự động detect format
 
 ### 4. Smart Caching
 - Redis cache for production (v5.2.1+)
@@ -438,13 +474,11 @@ asyncio.run(main())
 - **Synthetic Data Generation**: Enhance training data with variations
 - **Continuous Improvement**: Model retraining from conversation data
 
-### 7. Latest Updates (2024)
-- **Updated Dependencies**: All packages updated to latest stable versions
-- **Performance Improvements**: Faster inference with PyTorch 2.5.1+
-- **Enhanced Security**: Updated cryptography to 44.0.0+
-- **Better Testing**: pytest 8.3.4+ with improved async support
-- **Modern Python**: Full support for Python 3.11+ features
-- **Production Ready**: Gunicorn 23.0.0+ for production deployment
+### 7. Phase 1 E-commerce (2025)
+- **RAG_ENABLED / ENABLE_API_CALLS**: Cấu hình qua env, chạy được ngay không cần Pinecone
+- **Spring Boot Integration**: URLs qua config, mock fallback khi API tắt
+- **Multi-category**: Laptop, Tablet, Phụ kiện qua JSON
+- **Docker**: dockerfile + docker-compose, deploy Railway
 
 ## Testing
 
@@ -689,13 +723,23 @@ MODEL_LOADER_BACKEND=gemini  # or groq, ollama, openai, claude, cohere
 ```
 
 ### Q: How to add new product dataset?
-A: Replace `training/dataset/dataset.json` file and run:
+A: **Điện thoại (CSV)**: Dùng `Mobiles Dataset (2025).csv` format, chạy `python init_data.py`
+
+**Laptop/Tablet/Phụ kiện (JSON)**:
 ```bash
-python init_data.py
+python init_data.py data/processed/sample_products_extra.json
+```
+JSON format: `{"products": [{"id","name","brand","category","price","description",...}]}`
+
+### Q: How to enable/disable RAG or API calls?
+A: Trong `.env`:
+```bash
+RAG_ENABLED=true          # Cần PINECONE_API_KEY + đã chạy init_data.py
+ENABLE_API_CALLS=true     # Cần Spring Boot backend
 ```
 
 ### Q: How to enable/disable personalization?
-A: Update in `.env` file:
+A: Trong `.env` (tắt mặc định):
 ```bash
 ENABLE_PERSONALIZATION=true
 ENABLE_RECOMMENDATIONS=true
@@ -719,10 +763,17 @@ A: Python 3.10+ is required, but Python 3.11+ is recommended for best performanc
 A: Run `pip install -r requirements.txt --upgrade` to update all packages to latest versions.
 
 ### Q: How to run in production?
-A: Use Gunicorn with multiple workers:
+A: **Docker** (khuyến nghị):
+```bash
+docker-compose up -d
+# Hoặc docker build -f dockerfile -t ai-agent:v1 .
+```
+
+**Gunicorn**:
 ```bash
 gunicorn app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 ```
+Chi tiết deploy: xem `DEPLOYMENT.md`
 
 ## Roadmap
 
@@ -740,10 +791,9 @@ gunicorn app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 
 ### Phase 3: Production Ready ✅
 - [x] Updated dependencies (FastAPI 0.115.6+, PyTorch 2.5.1+)
-- [x] Enhanced security (cryptography 44.0.0+)
-- [x] Improved testing (pytest 8.3.4+)
 - [x] Production server (Gunicorn 23.0.0+)
-- [ ] Docker containerization
+- [x] Docker containerization (dockerfile + docker-compose)
+- [x] Railway deployment (railway.json)
 - [ ] Kubernetes deployment
 - [ ] Rate limiting
 
@@ -773,6 +823,15 @@ We welcome all contributions! Please:
 ## License
 
 Distributed under the MIT License. See `LICENSE` for more information.
+
+## Documentation
+
+| File | Nội dung |
+|------|----------|
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Docker, DockerHub, Railway deploy, troubleshooting |
+| [ECOMMERCE_AI_AGENT_ROADMAP.md](ECOMMERCE_AI_AGENT_ROADMAP.md) | Roadmap E-commerce, gợi ý Phase 2-4 |
+| [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) | Tích hợp Spring Boot microservices |
+| [FRONTEND_INTEGRATION.md](FRONTEND_INTEGRATION.md) | Tích hợp Frontend React/Vue |
 
 ## Support & Contact
 

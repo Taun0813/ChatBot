@@ -7,6 +7,7 @@ import logging
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 import json
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,91 @@ class ProductService:
     def __init__(self):
         self.products: Dict[str, Product] = {}
         self.categories: List[str] = []
-        self._initialize_sample_data()
+        loaded = self._load_products_from_dataset()
+        if not loaded:
+            self._initialize_sample_data()
+
+    def _normalize_category(self, category: str) -> str:
+        """Normalize category to supported labels"""
+        cat_lower = (category or "").strip().lower()
+        mapping = {
+            "phone": "Điện thoại", "mobile": "Điện thoại", "smartphone": "Điện thoại",
+            "laptop": "Laptop", "notebook": "Laptop", "macbook": "Laptop",
+            "tablet": "Tablet", "ipad": "Tablet",
+            "accessory": "Phụ kiện", "phụ kiện": "Phụ kiện", "phu kien": "Phụ kiện",
+            "watch": "Đồng hồ thông minh", "smartwatch": "Đồng hồ thông minh",
+            "headphone": "Tai nghe", "tai nghe": "Tai nghe", "earphone": "Tai nghe",
+            "power bank": "Sạc dự phòng", "sạc dự phòng": "Sạc dự phòng",
+        }
+        return mapping.get(cat_lower, category or "Khác")
+
+    def _availability_to_stock(self, availability: Optional[str]) -> int:
+        """Map availability text to a stock number"""
+        if not availability:
+            return 0
+        availability_lower = availability.strip().lower()
+        if "in stock" in availability_lower or "còn hàng" in availability_lower:
+            return 10
+        if "out of stock" in availability_lower or "hết hàng" in availability_lower:
+            return 0
+        return 0
+
+    def _load_products_from_dataset(self) -> bool:
+        """Load products from processed dataset file"""
+        try:
+            dataset_path = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "..", "data", "processed", "products_export.json")
+            )
+            if not os.path.exists(dataset_path):
+                logger.warning("Dataset file not found: %s", dataset_path)
+                return False
+
+            with open(dataset_path, "r", encoding="utf-8") as f:
+                items = json.load(f)
+
+            if not isinstance(items, list) or not items:
+                logger.warning("Dataset is empty or invalid: %s", dataset_path)
+                return False
+
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+
+                image_url = item.get("image_url") or ""
+                images = item.get("images") if isinstance(item.get("images"), list) else []
+                if image_url and not images:
+                    images = [image_url]
+
+                product_data = {
+                    "id": item.get("id") or "",
+                    "name": item.get("name") or "",
+                    "description": item.get("description") or "",
+                    "category": self._normalize_category(item.get("category")),
+                    "price": float(item.get("price") or 0),
+                    "stock": self._availability_to_stock(item.get("availability")),
+                    "features": item.get("features") or [],
+                    "specifications": item.get("specifications") or {},
+                    "images": images,
+                    "brand": item.get("brand") or "",
+                    "rating": float(item.get("rating") or 0.0),
+                    "reviews_count": int(item.get("reviews_count") or 0),
+                }
+
+                if not product_data["id"]:
+                    continue
+
+                product = Product(**product_data)
+                self.products[product.id] = product
+
+                if product.category not in self.categories:
+                    self.categories.append(product.category)
+
+            logger.info("Loaded %d products from dataset", len(self.products))
+            return len(self.products) > 0
+
+        except Exception as e:
+            logger.error(f"Error loading dataset: {e}")
+            return False
     
     def _initialize_sample_data(self):
         """Initialize with sample product data"""
