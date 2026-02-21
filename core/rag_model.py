@@ -346,10 +346,19 @@ RAG Model - Retrieval-Augmented Generation for product search
 Handles vector search and response generation
 """
 
+import asyncio
+import json
 import logging
+import re
 from typing import List, Dict, Any, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+# Giá tối đa hợp lý cho filter "trên X triệu" (tránh 999999999)
+MAX_PRICE_VND = 500_000_000  # 500 triệu
+RELAXED_TOP_K_MULTIPLIER = 4
+RELAXED_TOP_K_MAX = 60
+RELAXED_PRICE_TOLERANCE = 0.25  # mở rộng 25% khi relaxed
 
 
 class RAGModel:
@@ -363,35 +372,54 @@ class RAGModel:
     - User personalization integration
     """
 
-    def __init__(self, pinecone_client, model_loader):
+    def __init__(self, pinecone_client, model_loader, dimension: Optional[int] = None):
         self.pinecone_client = pinecone_client
         self.model_loader = model_loader
-        self.dimension = 1024   
+        # Dimension từ config (Pinecone index), không hardcode
+        self.dimension = dimension if dimension is not None else 1024
         self.embedding_model_name = "llama-text-embed-v2"
+        self._dimension_validated = False
 
     async def initialize(self):
-        """Initialize RAG model components"""
+        """Initialize RAG model components; validate dimension on first embed if needed."""
         try:
             logger.info("Initializing RAG model with Pinecone Cloud embeddings...")
-            logger.info(f"Embedding model: {self.embedding_model_name}")
+            logger.info(f"Embedding model: {self.embedding_model_name}, dimension={self.dimension}")
             logger.info("RAG model initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize RAG model: {e}")
             raise
-    
-    async def _generate_embedding(self, text: str) -> List[float]:
-        """Generate embedding via Pinecone managed model"""
+
+    def _embed_sync(self, text: str, input_type: str) -> List[float]:
+        """Sync embedding call (Pinecone inference is blocking). Run via to_thread."""
+        pc = self.pinecone_client.pc
+        response = pc.inference.embed(
+            model=self.embedding_model_name,
+            inputs=[text],
+            parameters={"input_type": input_type}
+        )
+        return list(response[0].values)
+
+    async def _generate_embedding(self, text: str, input_type: str = "passage") -> List[float]:
+        """Generate embedding via Pinecone managed model. Use input_type='query' for search."""
         try:
-            pc = self.pinecone_client.pc  # đã khởi tạo từ adapters/pinecone_client
-            response = pc.inference.embed(
-                model=self.embedding_model_name,
-                inputs=[text],
-                parameters={"input_type": "passage"}
+            embedding = await asyncio.to_thread(
+                self._embed_sync, text, input_type
             )
-            return response[0].values  # 1 vector (1024-dim)
+            if not self._dimension_validated:
+                if len(embedding) != self.dimension:
+                    raise ValueError(
+                        f"Embedding dimension mismatch: got {len(embedding)}, expected {self.dimension}"
+                    )
+                self._dimension_validated = True
+            return embedding
         except Exception as e:
             logger.error(f"Failed to generate embedding: {e}")
             raise
+
+    async def _generate_query_embedding(self, query: str) -> List[float]:
+        """Generate embedding for search query (query vs passage)."""
+        return await self._generate_embedding(query, input_type="query")
     
     async def search_products(
         self, 
@@ -416,8 +444,8 @@ class RAGModel:
             final_category = category or extracted_metadata.get("category")
             final_specs = specs or extracted_metadata.get("specs", {})
 
-            # Generate query embedding
-            query_embedding = await self._generate_embedding(query)
+            # Generate query embedding (query type, not passage)
+            query_embedding = await self._generate_query_embedding(query)
 
             # Search in Pinecone
             search_results = await self.pinecone_client.search_products(
@@ -428,28 +456,35 @@ class RAGModel:
                 category=final_category
             )
 
-            # Process and format results
+            # Process and format results (ranking fuses similarity + quality)
             products = await self._process_search_results(search_results, user_id)
-            
-            # Apply additional filtering based on extracted specs
             if final_specs:
                 products = await self._filter_by_specs(products, final_specs)
-            
-            # If no products found and we have strict filters, try relaxed search
+
+            # Relaxed search: chỉ khi không có kết quả; mở rộng price, tăng top_k, giữ brand
             if not products and (final_price_range or final_brand or final_specs):
-                logger.info("No products found with strict filters, trying relaxed search...")
+                relaxed_top_k = min(top_k * RELAXED_TOP_K_MULTIPLIER, RELAXED_TOP_K_MAX)
+                relaxed_price = None
+                if final_price_range:
+                    lo, hi = final_price_range
+                    delta = (hi - lo) * RELAXED_PRICE_TOLERANCE if hi > lo else lo * RELAXED_PRICE_TOLERANCE
+                    relaxed_price = (
+                        max(0, lo - delta),
+                        min(MAX_PRICE_VND, hi + delta)
+                    )
+                logger.info("No products with strict filters, trying relaxed search (wider price, top_k=%s)...", relaxed_top_k)
                 relaxed_results = await self.pinecone_client.search_products(
                     query_vector=query_embedding,
-                    top_k=top_k * 2,  # Get more results
-                    price_range=None,  # Remove price filter
-                    brand=None,  # Remove brand filter
-                    category=None
+                    top_k=relaxed_top_k,
+                    price_range=relaxed_price,
+                    brand=final_brand,
+                    category=final_category
                 )
                 products = await self._process_search_results(relaxed_results, user_id)
-                # Apply only essential filters
-                if final_specs and any(spec in final_specs for spec in ['pin', 'camera', 'chơi game']):
+                if final_specs:
                     products = await self._filter_by_specs(products, final_specs)
-            
+                products = products[:top_k]
+
             logger.info(f"Found {len(products)} products")
             return products
             
@@ -457,30 +492,38 @@ class RAGModel:
             logger.error(f"Failed to search products: {e}")
             raise
     
+    def _parse_specifications(self, raw: Any) -> Dict[str, Any]:
+        """Parse specifications from metadata: JSON string or 'key: value;' fallback."""
+        if raw is None:
+            return {}
+        if isinstance(raw, dict):
+            return raw
+        if isinstance(raw, str):
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                pass
+            parsed = {}
+            for item in raw.split(";"):
+                item = item.strip()
+                if ":" in item:
+                    key, val = item.split(":", 1)
+                    parsed[key.strip()] = val.strip()
+            return parsed
+        return {}
+
     async def _process_search_results(
         self, 
         search_results: List[Dict[str, Any]],
         user_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Process and format search results"""
+        """Process and format search results; ranking fuses similarity + quality."""
         try:
             products = []
             for result in search_results:
                 product_info = result.get("product_info", {})
-
-                # ✅ Fix: Parse specifications string back to dict if needed
-                specs = product_info.get("specifications", {})
-                if isinstance(specs, str):
-                    # Try to parse from "key: value; key: value" format
-                    parsed_specs = {}
-                    try:
-                        for item in specs.split(';'):
-                            if ':' in item:
-                                key, val = item.split(':', 1)
-                                parsed_specs[key.strip()] = val.strip()
-                    except:
-                        parsed_specs = specs
-                    specs = parsed_specs
+                similarity_score = float(result.get("score", 0) or 0)
+                specs = self._parse_specifications(product_info.get("specifications"))
 
                 product = {
                     "id": result["id"],
@@ -494,17 +537,15 @@ class RAGModel:
                     "reviews_count": int(product_info.get("reviews_count", 0)),
                     "availability": product_info.get("availability", "In Stock"),
                     "specifications": specs,
-                    "similarity_score": result["score"],
+                    "similarity_score": similarity_score,
                     "relevance_score": await self._calculate_relevance_score(
-                        product_info, user_id
+                        product_info, user_id, similarity_score=similarity_score
                     )
                 }
                 products.append(product)
 
-            # Sort by relevance score
             products.sort(key=lambda x: x["relevance_score"], reverse=True)
             return products
-
         except Exception as e:
             logger.error(f"Failed to process search results: {e}")
             raise
@@ -512,27 +553,25 @@ class RAGModel:
     async def _calculate_relevance_score(
         self,
         product_info: Dict[str, Any],
-        user_id: Optional[str] = None
+        user_id: Optional[str] = None,
+        similarity_score: float = 0.0
     ) -> float:
-        """Calculate relevance score for product"""
+        """Relevance = similarity (semantic) + rating/reviews boost. Không 'mù similarity'."""
         try:
-            base_score = 0.5
+            base = max(0.0, min(1.0, float(similarity_score)))
             rating = product_info.get("rating", 0)
             if rating >= 4.5:
-                base_score += 0.2
+                base += 0.15
             elif rating >= 4.0:
-                base_score += 0.1
-
+                base += 0.08
             reviews_count = product_info.get("reviews_count", 0)
             if reviews_count >= 1000:
-                base_score += 0.1
+                base += 0.05
             elif reviews_count >= 100:
-                base_score += 0.05
-
-            # TODO: add personalization here
-            return min(base_score, 1.0)
+                base += 0.03
+            return min(base, 1.0)
         except Exception:
-            return 0.5
+            return max(0.0, min(1.0, float(similarity_score)))
 
     async def generate_product_summary(
         self,
@@ -562,12 +601,15 @@ class RAGModel:
         product_data: Dict[str, Any],
         namespace: str = "default"
     ) -> bool:
-        """Upsert product to vector database"""
+        """Upsert product to vector database. Passage embedding; specs stored as JSON."""
         try:
             logger.info(f"Upserting product: {product_id}")
-
             product_text = self._create_product_text(product_data)
-            embedding = await self._generate_embedding(product_text)
+            embedding = await self._generate_embedding(product_text, input_type="passage")
+            specs_dict = product_data.get("specifications") or {}
+            if isinstance(specs_dict, str):
+                specs_dict = self._parse_specifications(specs_dict)
+            specs_json = json.dumps(specs_dict, ensure_ascii=False) if specs_dict else "{}"
 
             vector_data = {
                 "id": product_id,
@@ -582,14 +624,10 @@ class RAGModel:
                     "rating": product_data.get("rating", 0),
                     "reviews_count": product_data.get("reviews_count", 0),
                     "availability": product_data.get("availability", "In Stock"),
-                    # ✅ Fix: serialize specifications dict
-                    "specifications": "; ".join(
-                        [f"{k}: {v}" for k, v in product_data.get("specifications", {}).items()]
-                    ),
+                    "specifications": specs_json,
                     "product_text": product_text,
                 },
             }
-
             await self.pinecone_client.upsert_vectors([vector_data], namespace=namespace)
             logger.info(f"Successfully upserted product: {product_id}")
             return True
@@ -598,20 +636,24 @@ class RAGModel:
             return False
 
     def _create_product_text(self, product_data: Dict[str, Any]) -> str:
-        """Create text representation of product for embedding"""
+        """Structured prompt for stable passage embedding (searchable specs)."""
         try:
             parts = []
             if product_data.get("name"):
-                parts.append(product_data["name"])
+                parts.append(f"Tên sản phẩm: {product_data['name']}.")
             if product_data.get("brand"):
-                parts.append(f"thương hiệu {product_data['brand']}")
-            if product_data.get("description"):
-                parts.append(product_data["description"])
-            specs = product_data.get("specifications", {})
-            if specs:
-                parts.append(" ".join([f"{k}: {v}" for k, v in specs.items()]))
+                parts.append(f"Thương hiệu: {product_data['brand']}.")
             if product_data.get("category"):
-                parts.append(f"danh mục {product_data['category']}")
+                parts.append(f"Danh mục: {product_data['category']}.")
+            price = product_data.get("price")
+            if price is not None:
+                parts.append(f"Giá: {price:,.0f} VNĐ.")
+            if product_data.get("description"):
+                parts.append(f"Mô tả: {product_data['description']}")
+            specs = product_data.get("specifications") or {}
+            if isinstance(specs, dict) and specs:
+                spec_parts = [f"{k}: {v}" for k, v in specs.items()]
+                parts.append("Thông số: " + ", ".join(spec_parts) + ".")
             return " ".join(parts)
         except Exception:
             return ""
@@ -627,10 +669,7 @@ class RAGModel:
             }
             
             query_lower = query.lower()
-            
-            # Extract price range
-            import re
-            
+
             # Price patterns - updated to better handle Vietnamese
             price_patterns = [
                 (r'từ\s+(\d+)\s*(?:đến|tới)\s+(\d+)\s*tr(?:iệu)?', 'range'),  # "từ 10 đến 20 triệu"
@@ -654,10 +693,9 @@ class RAGModel:
                         max_price = int(match.group(1)) * 1000000
                         metadata["price_range"] = (0, max_price)
                     elif pattern_type == 'min':
-                        # Min price: trên X hoặc X trở lên
                         min_price = int(match.group(1)) * 1000000
-                        metadata["price_range"] = (min_price, 999999999)  # Large finite value
-                        logger.info(f"Extracted 'trên' price - min: {min_price}, max: 999999999")
+                        metadata["price_range"] = (min_price, MAX_PRICE_VND)
+                        logger.info(f"Extracted 'trên' price - min: {min_price}, max: {MAX_PRICE_VND}")
                     elif pattern_type == 'approx':
                         # Approximate price: khoảng X
                         price = int(match.group(1)) * 1000000
@@ -666,38 +704,60 @@ class RAGModel:
                     logger.info(f"Extracted price range from query: {metadata['price_range']}")
                     break
             
-            # Extract brand
-            brands = [
-                'iphone', 'apple', 'samsung', 'xiaomi', 'oppo', 'vivo', 
-                'realme', 'oneplus', 'huawei', 'nokia', 'motorola', 'lg', 'sony'
-            ]
-            
-            for brand in brands:
-                if brand in query_lower:
-                    metadata["brand"] = brand.title()
-                    logger.info(f"Extracted brand from query: {metadata['brand']}")
+            # Extract brand: map query keywords to dataset brand names (e.g. CSV "Company Name")
+            # iPhone/Apple: dataset uses "Apple", so "iphone" must map to "Apple" for Pinecone filter
+            brand_keywords_to_canonical = {
+                "iphone": "Apple", "apple": "Apple",
+                "samsung": "Samsung", "xiaomi": "Xiaomi", "oppo": "Oppo", "vivo": "Vivo",
+                "realme": "Realme", "oneplus": "OnePlus", "huawei": "Huawei", "nokia": "Nokia",
+                "motorola": "Motorola", "lg": "LG", "sony": "Sony",
+            }
+            for keyword, canonical_brand in brand_keywords_to_canonical.items():
+                if keyword in query_lower:
+                    metadata["brand"] = canonical_brand
+                    logger.info(f"Extracted brand from query: '{keyword}' -> {canonical_brand}")
                     break
             
-            # Extract specs
-            specs_patterns = {
-                'pin': r'pin\s+(khỏe|tốt|lâu|dài|cao)',
-                'camera': r'camera\s+(tốt|đẹp|chụp\s+ảnh|chất\s+lượng)',
-                'ram': r'(\d+)\s*gb\s*ram',
-                'rom': r'(\d+)\s*gb\s*(?:rom|bộ nhớ|storage)',
-                'màn hình': r'màn\s+hình\s+(\d+\.?\d*)\s*(?:inch|")',
-                'chơi game': r'chơi\s+game|gaming',
-                'chụp ảnh': r'chụp\s+ảnh|photography|photo'
-            }
-            
-            for spec, pattern in specs_patterns.items():
-                match = re.search(pattern, query_lower)
+            # Extract specs tối thiểu cho điện thoại: RAM, ROM, mAh, W (sạc), 5G, NFC
+            specs_patterns = [
+                # RAM (gb)
+                ('ram', r'(\d+)\s*gb\s*ram|\bram\s+(\d+)\s*gb', 1),
+                # ROM (gb)
+                ('rom', r'(\d+)\s*gb\s*(?:rom|bộ nhớ|storage)|\brom\s+(\d+)\s*gb', 1),
+                # Pin mAh
+                ('mah', r'(\d+)\s*mah|\bpin\s+(\d+)\s*mah|battery\s+(\d+)\s*mah', 1),
+                # Sạc nhanh W
+                ('charging_w', r'(\d+)\s*w\s*(?:sạc|fast|charge)|sạc\s+nhanh\s+(\d+)\s*w|(\d+)\s*w', 1),
+                # 5G, NFC (boolean)
+                ('5g', r'\b5g\b', None),
+                ('nfc', r'\bnfc\b', None),
+                # Các spec bổ sung
+                ('pin', r'pin\s+(khỏe|tốt|lâu|dài|cao|trâu|mạnh|bền)|pin\s+trâu|trâu\s+pin|pin\s+dự\s+phòng|dùng\s+2\s+ngày', None),
+                ('camera', r'camera\s+(tốt|đẹp|chụp\s+ảnh|chất\s+lượng)|chụp\s+ảnh\s+đẹp', None),
+                ('màn hình', r'màn\s+hình\s+(\d+\.?\d*)\s*(?:inch|")', 1),
+                ('chơi game', r'chơi\s+game|gaming|pubg|genshin|liên\s+quân', None),
+                ('chụp ảnh', r'chụp\s+ảnh|photography|photo|quay\s+video', None),
+                ('esim', r'\besim\b', None),
+                ('chip', r'snapdragon|dimensity|(\w+\s*\d+\s*gen)', 1),
+                ('nhỏ gọn', r'nhỏ\s+gọn|dễ\s+cầm|gọn\s+nhẹ', None),
+                ('bền', r'bền|ít\s+lỗi|lâu\s+bền', None),
+                ('ois', r'\bois\b|chống\s+rung', None),
+                ('sạc nhanh', r'sạc\s+nhanh', None),
+                ('ip67', r'ip67|ip68|chống\s+nước', None),
+                ('jack_35', r'jack\s+3\.5|3\.5\s*mm', None),
+                ('amoled', r'amoled|oled|120hz|90hz', None),
+            ]
+            for spec, pattern, group in specs_patterns:
+                match = re.search(pattern, query_lower, re.IGNORECASE)
                 if match:
-                    if spec in ['ram', 'rom', 'màn hình']:
-                        metadata["specs"][spec] = match.group(1)
-                        logger.info(f"Extracted {spec} from query: {match.group(1)}")
+                    if group is not None:
+                        # Hỗ trợ nhiều group (vd: ram 8gb | 8gb ram): lấy group đầu tiên khác None
+                        val = next((g for g in match.groups() if g is not None), None)
+                        if val is not None:
+                            metadata["specs"][spec] = (val.strip() if isinstance(val, str) else str(val).strip())
                     else:
                         metadata["specs"][spec] = True
-                        logger.info(f"Extracted {spec} requirement from query")
+                    logger.info("Extracted spec: %s", spec)
             
             return metadata
             
@@ -705,66 +765,100 @@ class RAGModel:
             logger.error(f"Failed to extract metadata from query: {e}")
             return {}
     
+    def _extract_number_from_spec(self, text: str) -> Optional[float]:
+        """Extract first number from spec string (e.g. '8GB' -> 8, '6.1 inch' -> 6.1)."""
+        if not text:
+            return None
+        m = re.search(r"(\d+\.?\d*)", str(text).strip())
+        return float(m.group(1)) if m else None
+
+    def _normalize_specs_dict(self, d: Dict[str, Any]) -> Dict[str, str]:
+        """Lowercase keys for case-insensitive match."""
+        if not d or not isinstance(d, dict):
+            return {}
+        return {k.strip().lower(): (v if isinstance(v, str) else str(v)).strip() for k, v in d.items()}
+
     async def _filter_by_specs(self, products: List[Dict[str, Any]], specs: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Filter products by extracted specifications"""
+        """Filter by specs: soft match (description + specs), ram/rom numeric >=."""
+        if not specs:
+            return products
         try:
-            filtered_products = []
-            
+            filtered = []
             for product in products:
-                product_specs = product.get("specifications", {})
+                product_specs = self._normalize_specs_dict(product.get("specifications") or {})
+                desc = str(product.get("description") or "").lower()
+                all_text = " ".join(product_specs.values()).lower() + " " + desc
                 matches = True
-                
                 for spec_key, spec_value in specs.items():
-                    if spec_key == 'pin' and spec_value:
-                        # Check for battery-related keywords
-                        battery_text = str(product_specs.get('pin', '')).lower()
-                        if not any(keyword in battery_text for keyword in ['khỏe', 'tốt', 'lâu', 'dài', 'mAh']):
+                    if not spec_value:
+                        continue
+                    if spec_key == "pin":
+                        battery_text = product_specs.get("pin", "")
+                        has_battery = (
+                            any(k in battery_text.lower() for k in ["khỏe", "tốt", "lâu", "dài", "trâu", "mạnh", "mah", "mah"])
+                            or re.search(r"\d+\s*mah", battery_text, re.I)
+                        )
+                        has_battery = has_battery or re.search(r"\d+\s*mah|pin\s+\d+|battery", desc)
+                        if not has_battery:
                             matches = False
                             break
-                    
-                    elif spec_key == 'camera' and spec_value:
-                        # Check for camera quality
-                        camera_text = str(product_specs.get('camera', '')).lower()
-                        if not any(keyword in camera_text for keyword in ['mp', 'mega', 'tốt', 'đẹp']):
+                    elif spec_key == "camera":
+                        camera_text = product_specs.get("camera", "") + " " + desc
+                        if not any(k in camera_text for k in ["mp", "mega", "tốt", "đẹp", "camera", "chụp"]):
                             matches = False
                             break
-                    
-                    elif spec_key == 'ram' and spec_value:
-                        # Check RAM
-                        ram_text = str(product_specs.get('ram', '')).lower()
-                        if spec_value not in ram_text:
+                    elif spec_key == "ram":
+                        req_num = self._extract_number_from_spec(str(spec_value))
+                        if req_num is None:
+                            continue
+                        ram_val = product_specs.get("ram") or ""
+                        prod_num = self._extract_number_from_spec(ram_val)
+                        if prod_num is None or prod_num < req_num:
                             matches = False
                             break
-                    
-                    elif spec_key == 'rom' and spec_value:
-                        # Check ROM
-                        rom_text = str(product_specs.get('rom', '')).lower()
-                        if spec_value not in rom_text:
+                    elif spec_key == "rom":
+                        req_num = self._extract_number_from_spec(str(spec_value))
+                        if req_num is None:
+                            continue
+                        rom_val = product_specs.get("rom") or product_specs.get("bộ nhớ", "") or ""
+                        prod_num = self._extract_number_from_spec(rom_val)
+                        if prod_num is None or prod_num < req_num:
                             matches = False
                             break
-                    
-                    elif spec_key == 'màn hình' and spec_value:
-                        # Check screen size
-                        screen_text = str(product_specs.get('màn hình', '')).lower()
-                        if spec_value not in screen_text:
+                    elif spec_key == "màn hình":
+                        req_num = self._extract_number_from_spec(str(spec_value))
+                        if req_num is None:
+                            continue
+                        screen_val = product_specs.get("màn hình", "") or product_specs.get("screen", "") or ""
+                        prod_num = self._extract_number_from_spec(screen_val)
+                        if prod_num is None:
                             matches = False
                             break
-                    
-                    elif spec_key in ['chơi game', 'chụp ảnh'] and spec_value:
-                        # Check for gaming or photography features
-                        description = str(product.get('description', '')).lower()
-                        if spec_key == 'chơi game' and not any(keyword in description for keyword in ['game', 'gaming', 'chơi']):
+                        if abs(prod_num - req_num) > 1.5:
                             matches = False
                             break
-                        elif spec_key == 'chụp ảnh' and not any(keyword in description for keyword in ['camera', 'chụp', 'ảnh', 'photo']):
+                    elif spec_key == "chơi game":
+                        if not any(k in all_text for k in ["game", "gaming", "chơi", "pubg", "genshin"]):
                             matches = False
                             break
-                
+                    elif spec_key == "chụp ảnh":
+                        if not any(k in all_text for k in ["camera", "chụp", "ảnh", "photo", "quay"]):
+                            matches = False
+                            break
+                    elif spec_key in ("5g", "nfc", "esim", "ois", "ip67", "jack_35", "amoled", "nhỏ gọn", "bền", "sạc nhanh"):
+                        search_terms = {"5g": ["5g"], "nfc": ["nfc"], "esim": ["esim"], "ois": ["ois", "chống rung"], "ip67": ["ip67", "ip68", "chống nước"], "jack_35": ["jack", "3.5"], "amoled": ["amoled", "oled", "120hz", "90hz"], "nhỏ gọn": ["nhỏ", "gọn", "dễ cầm"], "bền": ["bền"], "sạc nhanh": ["sạc nhanh", "fast charging"]}.get(spec_key, [spec_key])
+                        if not any(term in all_text for term in search_terms):
+                            matches = False
+                            break
+                    elif spec_key == "chip":
+                        chip_val = (product_specs.get("chip", "") or product_specs.get("cpu", "") or "") + " " + desc
+                        chip_val_lower = chip_val.lower()
+                        if not any(x in chip_val_lower for x in ["snapdragon", "dimensity", "gen", "chip"]):
+                            matches = False
+                            break
                 if matches:
-                    filtered_products.append(product)
-            
-            return filtered_products
-            
+                    filtered.append(product)
+            return filtered
         except Exception as e:
             logger.error(f"Failed to filter by specs: {e}")
             return products

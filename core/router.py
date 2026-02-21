@@ -15,6 +15,54 @@ from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
+
+def _to_product_cards(products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Chuẩn hoá danh sách sản phẩm thành product cards để FE render đẹp."""
+    cards = []
+    for p in products or []:
+        specs = p.get("specifications") or p.get("specs") or {}
+        if isinstance(specs, str):
+            specs = {}
+        spec_lower = {str(k).lower(): v for k, v in specs.items()}
+
+        def _get_spec(*keys):
+            for k in keys:
+                kk = str(k).lower()
+                if kk in spec_lower:
+                    return spec_lower[kk]
+            return None
+
+        price = p.get("price", 0)
+        try:
+            price_f = float(price)
+        except (TypeError, ValueError):
+            price_f = 0
+        cards.append({
+            "id": p.get("id", ""),
+            "name": p.get("name", "Unknown Product"),
+            "brand": p.get("brand", "Unknown Brand"),
+            "price": price_f,
+            "price_formatted": f"{price_f:,.0f} ₫" if price_f else "—",
+            "image_url": p.get("image_url", ""),
+            "rating": float(p.get("rating", 0)),
+            "reviews_count": int(p.get("reviews_count", 0)),
+            "specs": {
+                "ram": _get_spec("RAM", "ram"),
+                "rom": _get_spec("ROM", "rom", "Storage", "storage"),
+                "battery_mah": _get_spec("Battery", "battery", "mAh", "mah"),
+                "charging_w": _get_spec("Charging", "charging_w", "Fast charging", "W"),
+                "has_5g": _get_spec("5G", "5g") is not None or _get_spec("Network") == "5G",
+                "has_nfc": _get_spec("NFC", "nfc") is not None,
+            },
+            "similarity_score": p.get("similarity_score"),
+            "relevance_score": p.get("relevance_score"),
+            "description": (p.get("description") or "")[:200],
+            "category": p.get("category", ""),
+            "availability": p.get("availability", "In Stock"),
+        })
+    return cards
+
+
 class RouterType(Enum):
     RULE_BASED = "rule_based"
     ML_BASED = "ml_based"
@@ -551,22 +599,19 @@ class AgnoRouter:
         self.rules = self._initialize_rules()
     
     def _initialize_rules(self) -> List[Rule]:
-        """Initialize routing rules"""
+        """Initialize routing rules. Order/order-related higher than search to avoid wrong route."""
         return [
-            # Product search rules (highest priority)
-            Rule("product_search", r"(tìm|mua|mua|điện thoại|iphone|samsung|xiaomi|oppo|vivo|realme|oneplus|huawei|nokia|motorola|lg|sony)", "search", priority=10),
-            Rule("product_search_price", r"(dưới|trên|khoảng|từ|đến|giá|vnd|triệu|nghìn)", "search", priority=9),
-            Rule("product_search_specs", r"(pin|camera|ram|rom|màn hình|chơi game|chụp ảnh|battery|storage|display)", "search", priority=8),
-            Rule("product_comparison", r"(so sánh|so sanh|compare|đối chiếu)", "search", priority=7),
-            
-            # Order-related rules
-            Rule("order_status", r"(đơn hàng|order|giao hàng|vận chuyển|trạng thái|hủy|đổi|trả)", "order", priority=7),
-            Rule("order_number", r"#\d+|\d{4,}", "order", priority=6),
-            Rule("payment", r"(thanh toán|payment|invoice|hóa đơn)", "order", priority=5),
-            
+            # Order-related rules (cao hơn search để "đơn hàng" không bị route nhầm sang search)
+            Rule("order_status", r"(đơn hàng|order|giao hàng|vận chuyển|trạng thái|hủy|đổi|trả)", "order", priority=12),
+            Rule("order_number", r"#\d+|\d{4,}", "order", priority=11),
+            Rule("payment", r"(thanh toán|payment|invoice|hóa đơn)", "order", priority=10),
+            # Product search rules
+            Rule("product_search", r"(tìm|mua|điện thoại|iphone|samsung|xiaomi|oppo|vivo|realme|oneplus|huawei|nokia|motorola|lg|sony)", "search", priority=9),
+            Rule("product_search_price", r"(dưới|trên|khoảng|từ|đến|giá|vnd|triệu|nghìn)", "search", priority=8),
+            Rule("product_search_specs", r"(pin|camera|ram|rom|màn hình|chơi game|chụp ảnh|battery|storage|display)", "search", priority=7),
+            Rule("product_comparison", r"(so sánh|so sanh|compare|đối chiếu)", "search", priority=6),
             # API/Service rules
             Rule("api_call", r"(api|service|dịch vụ|tích hợp|kết nối)", "api", priority=4),
-            
             # Default chat rule (lowest priority)
             Rule("general_chat", r".*", "chat", priority=1)
         ]
@@ -697,15 +742,19 @@ class AgnoRouter:
             raise
     
     async def _initialize_rag_model(self):
-        """Initialize RAG model"""
+        """Initialize RAG model and call await rag_model.initialize()"""
         try:
             from core.rag_model import RAGModel
             
+            pinecone_config = self.config.rag_config.get("pinecone_config", {})
+            dimension = pinecone_config.get("dimension")
+            
             self.rag_model = RAGModel(
                 pinecone_client=self.pinecone_client,
-                model_loader=self.model_loader
+                model_loader=self.model_loader,
+                dimension=dimension
             )
-            
+            await self.rag_model.initialize()
             logger.info("RAG model initialized")
             
         except Exception as e:
@@ -892,6 +941,10 @@ class AgnoRouter:
             )
             
             # Add orchestrator metadata
+            response.setdefault("metadata", {})
+            if not isinstance(response["metadata"], dict):
+                response["metadata"] = {"raw_metadata": response["metadata"]}
+
             response["metadata"]["orchestrator"] = {
                 "type": "hybrid",
                 "selected_router": final_decision.selected_router.value,
@@ -1082,6 +1135,11 @@ class AgnoRouter:
             
             if cached_result:
                 logger.info("Cache hit for search query")
+                # Chuẩn hoá search_results từ cache thành product cards
+                if "metadata" in cached_result and "search_results" in cached_result["metadata"]:
+                    cached_result["metadata"]["search_results"] = _to_product_cards(
+                        cached_result["metadata"]["search_results"]
+                    )
                 return cached_result
             
             # Use RAG model to search for products
@@ -1117,14 +1175,15 @@ class AgnoRouter:
                 context=context
             )
             
-            # Prepare result
+            # Chuẩn hoá metadata.search_results theo product cards để FE render đẹp
+            product_cards = _to_product_cards(search_results)
             result = {
                 "response": response,
                 "intent": "search",
                 "confidence": 0.9,
                 "metadata": {
-                    "search_results": search_results,
-                    "results_count": len(search_results),
+                    "search_results": product_cards,
+                    "results_count": len(product_cards),
                     "model_used": "rag",
                     "personalized": self.personalization_model is not None and user_id is not None,
                     "cached": False

@@ -77,31 +77,33 @@ class AILogger:
         console_handler.setFormatter(console_formatter)
         self.logger.addHandler(console_handler)
     
-    def debug(self, message: str, **kwargs):
-        """Log debug message"""
-        self._log(logging.DEBUG, message, **kwargs)
+    def debug(self, message: str, *args, **kwargs):
+        """Log debug message. Supports standard logging: logger.debug('msg %s', arg)."""
+        self._log(logging.DEBUG, message, *args, **kwargs)
     
-    def info(self, message: str, **kwargs):
-        """Log info message"""
-        self._log(logging.INFO, message, **kwargs)
+    def info(self, message: str, *args, **kwargs):
+        """Log info message. Supports standard logging: logger.info('msg %s', arg)."""
+        self._log(logging.INFO, message, *args, **kwargs)
     
-    def warning(self, message: str, **kwargs):
-        """Log warning message"""
-        self._log(logging.WARNING, message, **kwargs)
+    def warning(self, message: str, *args, **kwargs):
+        """Log warning message. Supports standard logging: logger.warning('msg %s', arg)."""
+        self._log(logging.WARNING, message, *args, **kwargs)
     
-    def error(self, message: str, **kwargs):
-        """Log error message"""
-        self._log(logging.ERROR, message, **kwargs)
+    def error(self, message: str, *args, **kwargs):
+        """Log error message. Supports standard logging: logger.error('msg %s', arg)."""
+        self._log(logging.ERROR, message, *args, **kwargs)
     
-    def critical(self, message: str, **kwargs):
-        """Log critical message"""
-        self._log(logging.CRITICAL, message, **kwargs)
+    def critical(self, message: str, *args, **kwargs):
+        """Log critical message. Supports standard logging: logger.critical('msg %s', arg)."""
+        self._log(logging.CRITICAL, message, *args, **kwargs)
     
-    def _log(self, level: int, message: str, **kwargs):
-        """Internal logging method"""
+    def _log(self, level: int, message: str, *args, **kwargs):
+        """Internal logging method. Formats message with args like standard logging."""
         extra_fields = kwargs.pop('extra_fields', {})
         if kwargs:
             extra_fields.update(kwargs)
+        if args:
+            message = message % args
         
         if extra_fields:
             # Create a new record with extra fields

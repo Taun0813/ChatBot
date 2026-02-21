@@ -273,19 +273,24 @@ async def ask(
     - General chat: "Xin chào, bạn có thể giúp tôi không?"
     - Order inquiry: "Đơn hàng #1234 của tôi ở đâu?"
     """
+    # Stable user_id: default anonymous when not provided (tránh crash + chuẩn response)
+    effective_user_id = request.user_id if request.user_id and request.user_id.strip() else "anonymous"
+
     try:
-        logger.info(f"Received ask request: {request.message[:100]}...")
+        msg_preview = (request.message or "")[:100]
+        logger.info("Received ask request: %s...", msg_preview or "(empty)")
         
         # Process the request through the Agno router
         response = await router.process_request(
             message=request.message,
-            user_id=request.user_id,
+            user_id=effective_user_id,
             session_id=request.session_id,
             context=request.context,
             intent=request.intent
         )
         
-        logger.info(f"Generated response: {response['response'][:100]}...")
+        resp_preview = (response.get("response") or "")[:100]
+        logger.info("Generated response: %s...", resp_preview or "(empty)")
         
         # Add model info to response metadata
         from config import get_settings
@@ -315,7 +320,7 @@ async def ask(
                     "assistant_response": response["response"],
                     "intent": response.get("intent", "unknown"),
                     "confidence": response.get("confidence", 0.0),
-                    "user_id": request.user_id,
+                    "user_id": effective_user_id,
                     "session_id": request.session_id or "unknown",
                     "timestamp": time.time(),
                     "metadata": response.get("metadata", {})
@@ -331,7 +336,7 @@ async def ask(
             logger.warning(f"Failed to collect conversation for training: {e}")
         
         return ChatResponse(
-            user_id=request.user_id,
+            user_id=effective_user_id,
             response=response["response"],
             intent=response["intent"],
             confidence=response["confidence"],

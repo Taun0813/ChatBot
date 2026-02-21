@@ -8,6 +8,20 @@ Intelligent AI Agent system for e-commerce with **Hybrid Orchestrator** combinin
 [![Pinecone](https://img.shields.io/badge/Pinecone-5.0.1+-orange.svg)](https://pinecone.io)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+## Mục lục (Table of Contents)
+
+- [Key Features](#key-features)
+- [System Architecture](#system-architecture)
+- [Luồng hoạt động của hệ thống](#luồng-hoạt-động-của-hệ-thống-system-workflow)
+- [Directory Structure](#directory-structure)
+- [Quick Start](#quick-start)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage & API Endpoints](#usage)
+- [Advanced Features](#advanced-features)
+- [FAQ](#faq)
+- [Documentation](#documentation)
+
 ## Key Features
 
 - **Hybrid Orchestrator**: Combines rule-based + ML-based routing (85-95% accuracy)
@@ -63,6 +77,88 @@ graph TB
     U --> V[Response to Client]
 ```
 
+## Luồng hoạt động của hệ thống (System Workflow)
+
+### 1. Tổng quan luồng request
+
+Mỗi request từ client đi qua các bước sau:
+
+```
+Client (POST /ask hoặc /chat)
+    → FastAPI app (app.py)
+    → Chuẩn hóa user_id (nếu null/trống → "anonymous")
+    → AgnoRouter.process_request(message, user_id, session_id, context, intent)
+    → [Nếu intent đã cho sẵn] _process_with_intent(message, intent, ...)
+    → [Nếu chưa có intent] Hybrid: _get_rule_decision + _get_ml_decision → fuse_decisions → intent
+    → _process_with_intent(message, intent_final, ...)
+        → intent = "search"  → _handle_search_request
+        → intent = "order"  → _handle_order_request
+        → intent = "api"    → _handle_api_request
+        → intent = "chat"   → _handle_chat_request
+    → response["user_id"] = user_id, response["session_id"] = session_id
+    → ChatResponse(user_id=user_id, response=..., intent=..., confidence=..., metadata=..., session_id=...)
+    → JSON trả về client
+```
+
+- **user_id**: Bắt buộc trong response. Nếu client không gửi `user_id` hoặc gửi `null`, hệ thống dùng `"anonymous"` (trong `app.py` và `core/router.py`).
+
+### 2. Luồng Search (RAG – tìm kiếm sản phẩm)
+
+Khi intent = **search**:
+
+1. **RAG tắt** (`RAG_ENABLED=false`): gọi `_handle_search_fallback` → LLM trả lời chung, không search thật.
+2. **RAG bật**:
+   - **Cache**: Kiểm tra cache theo `{ type: "search", query, user_id }`. Nếu có → trả về kết quả đã cache (TTL 30 phút).
+   - **RAG search**: `rag_model.search_products(query=message, user_id=user_id, top_k=5)`:
+     - **Trích metadata từ câu** (`_extract_metadata_from_query`):
+       - Giá: "dưới X triệu", "từ X đến Y triệu", "khoảng X triệu" → `price_range` (VND).
+       - Thương hiệu: từ khóa "iphone"/"apple" → **Apple**, "samsung" → Samsung, ... (ánh xạ đúng tên trong dataset/Pinecone; ví dụ iPhone → Apple).
+       - Spec: "pin trâu", "pin khỏe", "camera tốt", "RAM X GB", ... → `specs`.
+     - **Embedding**: Tạo query embedding (Pinecone managed model, `input_type="passage"`).
+     - **Pinecone**: `search_products(query_vector, top_k, price_range, brand, category)` — filter metadata (brand, price, category) + vector similarity.
+     - **Xử lý kết quả**: `_process_search_results` (format, similarity_score, relevance_score).
+     - **Lọc theo spec**: Nếu có `specs` (pin, camera, ...) → `_filter_by_specs`.
+     - **Relaxed search**: Nếu không còn sản phẩm nào mà vẫn có filter (giá/thương hiệu/spec) → gọi lại Pinecone **không** filter (chỉ vector) → lấy thêm kết quả → lọc spec cơ bản.
+   - **Cá nhân hóa** (nếu bật): `personalization_model.record_user_interaction` (search, query) rồi `get_personalized_recommendations` để sắp xếp/giới hạn kết quả.
+   - **Tạo câu trả lời**: `interaction_model.generate_search_response(query, search_results, user_id, context)` → văn bản tự nhiên từ danh sách sản phẩm.
+   - **Cache**: Lưu kết quả vào cache (nếu có CacheManager).
+   - **Trả về**: `{ response, intent: "search", confidence: 0.9, metadata: { search_results, results_count, model_used: "rag", personalized, cached } }`.
+
+Dữ liệu sản phẩm trong Pinecone đến từ **init_data.py** (CSV/JSON → transform → upsert). File `data/processed/products_export.json` được tạo khi export từ init_data; **ProductService** (nếu dùng) đọc file này; **luồng search RAG không đọc file JSON** mà chỉ dùng Pinecone.
+
+### 3. Luồng Chat (hội thoại chung)
+
+- Intent = **chat** → `_handle_chat_request(message, user_id, context)`.
+- Gọi `interaction_model.generate_response(message, user_id, context)` (LLM, có thể dùng context/session).
+- Trả về response dạng hội thoại, không có `search_results`.
+
+### 4. Luồng Order / API
+
+- **Order**: Intent = **order** → `_handle_order_request` → gọi API model (tra cứu đơn hàng, v.v.) nếu `ENABLE_API_CALLS=true`.
+- **API**: Intent = **api** → `_handle_api_request` → tích hợp microservices (order, payment, warranty, product) theo config.
+
+### 5. Hybrid Orchestrator (khi enable_hybrid = true)
+
+- **Rule-based**: Pattern matching trên message → intent (search, order, api, chat) + confidence.
+- **ML-based**: Feature extraction (product/order/price mentions, session, …) → intent classification (LLM/Model) → intent + confidence.
+- **Fusion**: Kết hợp rule + ML (fusion_weights, adaptive) → intent cuối cùng → xử lý theo intent như trên.
+
+### 6. Tóm tắt thành phần chính
+
+| Thành phần | Vai trò |
+|------------|--------|
+| **app.py** | Entry FastAPI: lifespan khởi tạo/dọn AgnoRouter, endpoint `/ask`, `/chat`; chuẩn hóa `user_id` → `"anonymous"` nếu null/trống. |
+| **core/router.py** | AgnoRouter: process_request, hybrid routing (rule + ML), fusion, gọi _handle_search_request / _handle_chat_request / _handle_order_request / _handle_api_request; cache get/set cho search. |
+| **core/rag_model.py** | RAG: search_products (trích metadata query, embedding, Pinecone search, filter_by_specs, relaxed search), _extract_metadata_from_query (brand map iPhone→Apple, giá, spec), _filter_by_specs. |
+| **adapters/pinecone_client.py** | Pinecone: search_products với filter metadata (brand, price, category) + vector similarity. |
+| **core/interaction_model.py** | Tạo câu trả lời: generate_search_response (từ search_results), generate_response (chat). |
+| **core/personalization_model.py** | Cá nhân hóa (khi bật): record_user_interaction, get_personalized_recommendations; profile từ JSON/SQLite. |
+| **cache/** (optional) | CacheManager: cache kết quả search (TTL 30 phút) để giảm gọi RAG/Pinecone. |
+| **init_data.py** | Load CSV/JSON → transform → upsert Pinecone, export `data/processed/products_export.json`. |
+| **services/product_service.py** | Đọc `data/processed/products_export.json` (dùng khi có Product API riêng); luồng RAG search không đọc file này. |
+
+---
+
 ## Directory Structure
 
 ```
@@ -101,7 +197,7 @@ ai_agent/
 │   │   └── openai_loader.py      # OpenAI GPT
 │   └── pinecone_client.py        # Pinecone vector DB
 │
-├── cache/                        # Caching layer
+├── cache/                        # Caching layer (optional - router dùng khi có CacheManager)
 │   ├── redis_cache.py            # Redis cache
 │   ├── memory_cache.py           # In-memory cache
 │   └── cache_manager.py          # Cache manager
@@ -130,8 +226,11 @@ ai_agent/
 │   ├── ingest.py                 # Data ingestion
 │   ├── process_dataset.py        # Dataset processing
 │   ├── processed/                # Processed data
-│   │   └── sample_products_extra.json  # Mẫu Laptop, Tai nghe, Sạc
-│   ├── profiles/                 # User profiles
+│   │   ├── products_export.json  # Export từ init_data (ProductService đọc; RAG dùng Pinecone)
+│   │   ├── sample_products_extra.json  # Mẫu Laptop, Tai nghe, Sạc
+│   │   ├── knowledge_base.json   # Knowledge base
+│   │   └── training_data.json    # Training data
+│   ├── profiles/                # User profiles (JSON/SQLite khi bật personalization)
 │   └── schema/                   # Product schemas (đa danh mục)
 │
 ├── training/                     # Model training & fine-tuning
@@ -320,11 +419,16 @@ ENABLE_PERSONALIZATION=false
 ENABLE_RECOMMENDATIONS=false
 ```
 
+**Lưu ý**: `user_id` trong request là tùy chọn; nếu không gửi hoặc null, response vẫn trả về `user_id` với giá trị `"anonymous"`.
+
 ## Usage
 
 ### API Endpoints
 
 #### 1. Main Chat endpoint (Hybrid Orchestrator)
+- **Body**: `message` (bắt buộc), `user_id` (tùy chọn, mặc định `"anonymous"`), `session_id`, `context`, `intent` (tùy chọn).
+- **Response**: Luôn có `user_id` (string). Nếu không gửi `user_id` thì server trả về `"anonymous"`.
+
 ```bash
 curl -X POST "http://localhost:8000/ask" \
   -H "Content-Type: application/json" \
@@ -333,6 +437,14 @@ curl -X POST "http://localhost:8000/ask" \
     "user_id": "user123",
     "session_id": "session001"
   }'
+```
+
+Gửi không có `user_id` (vẫn hợp lệ):
+```bash
+curl -X POST "http://localhost:8000/ask" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Điện thoại iPhone pin trâu"}'
+# response.user_id sẽ là "anonymous"
 ```
 
 #### 2. Product Search (from real dataset)
@@ -448,11 +560,13 @@ asyncio.run(main())
 - **API Agent**: External service integration
 - **Performance Tracking**: Real-time metrics and monitoring
 
-### 3. Multi-category Dataset
+### 3. Multi-category Dataset & RAG Search
 - **Điện thoại**: 900+ sản phẩm (`Mobiles Dataset (2025).csv`) - Apple, Samsung, OnePlus, Xiaomi, etc.
 - **Laptop, Tablet, Phụ kiện**: Hỗ trợ JSON (`data/processed/sample_products_extra.json`)
 - **Schema**: `data/schema/product_schema.py` - Điện thoại, Laptop, Tablet, Tai nghe, Sạc dự phòng, ...
 - **Init**: `python init_data.py [file.csv|file.json]` - Tự động detect format
+- **RAG brand mapping**: Trong dataset/Pinecone, iPhone lưu với brand **Apple**. Hệ thống tự map "iphone"/"apple" → Apple khi trích metadata từ query (trong `core/rag_model.py`).
+- **Spec từ khóa**: "pin trâu", "pin khỏe", "camera tốt", "RAM X GB", ... được trích và dùng để lọc/ưu tiên kết quả (và relaxed search khi filter quá chặt).
 
 ### 4. Smart Caching
 - Redis cache for production (v5.2.1+)
@@ -715,6 +829,12 @@ pre-commit install
 - CDN for static assets
 
 ## FAQ
+
+### Q: Request không gửi user_id có lỗi không?
+A: Không. Nếu không gửi `user_id` hoặc gửi `null`, hệ thống dùng `"anonymous"` và response vẫn trả về đúng format (user_id là string).
+
+### Q: Tìm "iPhone pin trâu" nhưng ra Vivo/Oppo?
+A: Đảm bảo đã bật RAG và index Pinecone từ CSV. Hệ thống map "iphone" → brand **Apple** (dataset dùng Company Name = Apple). Nếu vẫn sai, kiểm tra đã chạy `init_data.py` với CSV và Pinecone có metadata `brand: "Apple"` cho iPhone.
 
 ### Q: How to change LLM model?
 A: Update environment variable `MODEL_LOADER_BACKEND` in `.env` file:
