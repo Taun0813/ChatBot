@@ -132,8 +132,8 @@ Nếu không chắc chắn về thông tin, hãy nói rõ và đề xuất cách
     ) -> str:
         """Create prompt for search response generation"""
         
-        # Format search results
-        products_text = self._format_search_results(search_results)
+        # Format search results (kèm spec liên quan query: pin, camera, ram...)
+        products_text = self._format_search_results(search_results, query=query)
         
         return f"""Bạn là trợ lý bán hàng chuyên nghiệp. Dựa trên yêu cầu tìm kiếm và kết quả tìm được, hãy tạo một phản hồi tự nhiên và hữu ích.
 
@@ -151,18 +151,15 @@ Hãy tạo một phản hồi:
 
 Trả lời bằng tiếng Việt, tự nhiên và thân thiện."""
     
-    def _format_search_results(self, search_results: List[Dict[str, Any]]) -> str:
-        """Format search results for prompt - compact, giá hiển thị VND."""
-        formatted_results = []
-        for i, product in enumerate(search_results[:3], 1):
-            name = product.get("name", "Unknown")
-            brand = product.get("brand", "Unknown")
-            price_vnd = PromptTemplates._price_for_display(product.get("price", 0))
-            rating = product.get("rating", 0)
-            formatted_results.append(
-                f"{i}. {name} ({brand}) - Giá: {price_vnd:,} VNĐ - ⭐ {rating}/5"
-            )
-        return "\n".join(formatted_results)
+    def _format_search_results(
+        self,
+        search_results: List[Dict[str, Any]],
+        query: Optional[str] = None,
+    ) -> str:
+        """Format search results - nếu có query thì thêm spec liên quan (pin, camera...) để so sánh."""
+        return PromptTemplates._format_products(
+            search_results[:3], max_items=3, query=query
+        )
     
     def _generate_no_results_response(self, query: str) -> str:
         """Generate response when no results found"""
@@ -260,17 +257,25 @@ Bạn có muốn tôi gợi ý một số sản phẩm phổ biến không?"""
         query: str,
         search_results: List[Dict[str, Any]]
     ) -> str:
-        """Generate fallback response when model fails - giá hiển thị VND."""
+        """Template response - giá VNĐ và kèm spec liên quan (pin, camera...) để user so sánh."""
         if not search_results:
             return PromptTemplates.get_no_results_prompt(query)
+        from core.prompts import get_spec_keys_for_query, format_product_line_with_specs
+        spec_keys = get_spec_keys_for_query(query)
         response_parts = [f"Dựa trên yêu cầu '{query}', tôi tìm thấy {len(search_results)} sản phẩm phù hợp:"]
-        for i, product in enumerate(search_results[:3], 1):
-            name = product.get("name", "Unknown")
-            brand = product.get("brand", "Unknown")
+        for i, product in enumerate(search_results[:5], 1):
             price_vnd = PromptTemplates._price_for_display(product.get("price", 0))
-            rating = product.get("rating", 0)
-            response_parts.append(f"{i}. {name} ({brand}) - {price_vnd:,} VNĐ - ⭐ {rating}/5")
-        if len(search_results) > 3:
-            response_parts.append(f"... và {len(search_results) - 3} sản phẩm khác.")
+            rating = float(product.get("rating", 0))
+            if spec_keys:
+                line = format_product_line_with_specs(
+                    product, spec_keys, price_vnd, rating, index=i
+                )
+            else:
+                name = product.get("name", "Unknown")
+                brand = product.get("brand", "Unknown")
+                line = f"{i}. {name} ({brand}) - {price_vnd:,} VNĐ - ⭐ {rating}/5"
+            response_parts.append(line)
+        if len(search_results) > 5:
+            response_parts.append(f"... và {len(search_results) - 5} sản phẩm khác.")
         response_parts.append("Bạn có muốn tôi cung cấp thêm thông tin chi tiết về sản phẩm nào không?")
         return "\n".join(response_parts)

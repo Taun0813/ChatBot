@@ -3,7 +3,61 @@ Prompt Templates for AI Agent System
 Templates for RAG answers, product recommendations, and conversation
 """
 
+import re
 from typing import List, Dict, Any, Optional
+
+# Query keyword → spec keys cần hiển thị để user so sánh (pin, camera, ram, ...)
+QUERY_SPEC_KEYWORDS = [
+    (r"pin\s*(trâu|khỏe|lâu|dài|cao)?|battery|pin\s*\d", ["pin"]),
+    (r"camera|chụp\s*ảnh|chất\s*lượng\s*ảnh", ["camera", "camera trước"]),
+    (r"ram\s*\d*|\d+\s*gb\s*ram", ["ram"]),
+    (r"rom|bộ\s*nhớ|storage|\d+\s*gb\s*(?!ram)", ["rom"]),
+    (r"chơi\s*game|gaming|đồ\s*họa", ["ram", "pin"]),
+    (r"màn\s*hình|màn\s*hình\s*lớn|hiển\s*thị", ["màn hình"]),
+    (r"chip|vi\s*xử\s*lý|processor", ["chip"]),
+]
+
+
+def get_spec_keys_for_query(query: str) -> List[str]:
+    """Từ query (vd: 'điện thoại pin trâu') trả về list spec keys cần hiển thị để user so sánh."""
+    if not (query or "").strip():
+        return []
+    q = re.sub(r"\s+", " ", query.strip().lower())
+    seen = set()
+    result = []
+    for pattern, spec_keys in QUERY_SPEC_KEYWORDS:
+        if re.search(pattern, q, re.IGNORECASE):
+            for k in spec_keys:
+                if k not in seen:
+                    seen.add(k)
+                    result.append(k)
+    return result
+
+
+def format_product_line_with_specs(
+    product: Dict[str, Any],
+    spec_keys: List[str],
+    price_vnd: int,
+    rating: float,
+    index: int = 1,
+) -> str:
+    """Một dòng sản phẩm: tên, giá, rating, và các spec được chọn (pin, camera, ...)."""
+    name = product.get("name", "Unknown")
+    brand = product.get("brand", "Unknown")
+    specs = product.get("specifications") or {}
+    if isinstance(specs, str):
+        specs = {}
+    parts = [f"{index}. {name} ({brand}) - {price_vnd:,} VNĐ"]
+    for key in spec_keys:
+        val = specs.get(key) or specs.get(key.replace(" ", "_"))
+        label = key.replace("_", " ").title()
+        if val:
+            parts.append(f"{label}: {val}")
+        else:
+            parts.append(f"{label}: (chưa có dữ liệu)")
+    parts.append(f"⭐ {rating}/5")
+    return " - ".join(parts)
+
 
 class PromptTemplates:
     """Prompt templates for different use cases"""
@@ -26,14 +80,19 @@ Nếu không chắc chắn về thông tin, hãy nói rõ và đề xuất cách
 
     @staticmethod
     def get_product_search_prompt(query: str, products: List[Dict[str, Any]]) -> str:
-        """Prompt for product search results - ngắn gọn để giảm latency LLM."""
-        products_text = PromptTemplates._format_products(products, max_items=3)
+        """Prompt for product search - có query nên _format_products sẽ thêm spec liên quan (pin, camera...)."""
+        products_text = PromptTemplates._format_products(products, max_items=3, query=query)
+        spec_keys = get_spec_keys_for_query(query)
+        spec_note = ""
+        if spec_keys:
+            spec_note = f" Khách quan tâm: {', '.join(spec_keys)} — hãy nhắc rõ từng sản phẩm có thông số đó và so sánh ngắn gọn."
         return f"""Yêu cầu: "{query}"
 
-Sản phẩm:
+Sản phẩm (đã kèm thông số liên quan):
 {products_text}
+{spec_note}
 
-Trả lời ngắn gọn bằng tiếng Việt: (1) Xác nhận yêu cầu, (2) Giới thiệu 2-3 sản phẩm trên kèm giá VNĐ, (3) Một lời khuyên ngắn. Không lặp lại toàn bộ danh sách."""
+Trả lời ngắn gọn bằng tiếng Việt: (1) Xác nhận yêu cầu, (2) Giới thiệu 2-3 sản phẩm kèm giá VNĐ và thông số họ quan tâm, (3) So sánh/khuyên ngắn. Không lặp lại toàn bộ danh sách."""
 
     @staticmethod
     def get_product_recommendation_prompt(
@@ -188,20 +247,29 @@ Bạn cần hỗ trợ gì cụ thể?"""
             return 0
 
     @staticmethod
-    def _format_products(products: List[Dict[str, Any]], max_items: int = 3) -> str:
-        """Format products for prompt - compact, tối đa max_items để giảm token và tăng tốc LLM."""
+    def _format_products(
+        products: List[Dict[str, Any]],
+        max_items: int = 3,
+        query: Optional[str] = None,
+    ) -> str:
+        """Format products: nếu có query thì thêm spec liên quan (pin, camera, ram...) để so sánh."""
         if not products:
             return "Không có sản phẩm nào."
         products = products[:max_items]
+        spec_keys = get_spec_keys_for_query(query or "")
         formatted_products = []
         for i, product in enumerate(products, 1):
-            name = product.get("name", "Unknown")
-            brand = product.get("brand", "Unknown")
             price_vnd = PromptTemplates._price_for_display(product.get("price", 0))
-            rating = product.get("rating", 0)
-            formatted_products.append(
-                f"{i}. {name} ({brand}) - Giá: {price_vnd:,} VNĐ - ⭐ {rating}/5"
-            )
+            rating = float(product.get("rating", 0))
+            if spec_keys:
+                line = format_product_line_with_specs(
+                    product, spec_keys, price_vnd, rating, index=i
+                )
+            else:
+                name = product.get("name", "Unknown")
+                brand = product.get("brand", "Unknown")
+                line = f"{i}. {name} ({brand}) - Giá: {price_vnd:,} VNĐ - ⭐ {rating}/5"
+            formatted_products.append(line)
         return "\n".join(formatted_products)
 
     @staticmethod
