@@ -26,26 +26,14 @@ Nếu không chắc chắn về thông tin, hãy nói rõ và đề xuất cách
 
     @staticmethod
     def get_product_search_prompt(query: str, products: List[Dict[str, Any]]) -> str:
-        """Prompt for product search results"""
-        
-        # Format products
-        products_text = PromptTemplates._format_products(products)
-        
-        return f"""Bạn là trợ lý bán hàng chuyên nghiệp. Dựa trên yêu cầu tìm kiếm và kết quả tìm được, hãy tạo một phản hồi tự nhiên và hữu ích.
+        """Prompt for product search results - ngắn gọn để giảm latency LLM."""
+        products_text = PromptTemplates._format_products(products, max_items=3)
+        return f"""Yêu cầu: "{query}"
 
-Yêu cầu tìm kiếm: "{query}"
-
-Kết quả tìm được:
+Sản phẩm:
 {products_text}
 
-Hãy tạo một phản hồi:
-1. Xác nhận hiểu yêu cầu của khách hàng
-2. Giới thiệu các sản phẩm phù hợp nhất (tối đa 3 sản phẩm)
-3. So sánh ưu nhược điểm của từng sản phẩm
-4. Đưa ra lời khuyên dựa trên nhu cầu
-5. Hỏi thêm thông tin nếu cần thiết
-
-Trả lời bằng tiếng Việt, tự nhiên và thân thiện."""
+Trả lời ngắn gọn bằng tiếng Việt: (1) Xác nhận yêu cầu, (2) Giới thiệu 2-3 sản phẩm trên kèm giá VNĐ, (3) Một lời khuyên ngắn. Không lặp lại toàn bộ danh sách."""
 
     @staticmethod
     def get_product_recommendation_prompt(
@@ -186,38 +174,34 @@ Tôi có thể hỗ trợ bạn với:
 Bạn cần hỗ trợ gì cụ thể?"""
 
     @staticmethod
-    def _format_products(products: List[Dict[str, Any]]) -> str:
-        """Format products for prompt"""
+    def _price_for_display(price: Any) -> int:
+        """Chuyển giá USD (số nhỏ) sang VND để hiển thị. Giá đã là VND thì giữ nguyên."""
+        try:
+            p = float(price or 0)
+            if p <= 0:
+                return 0
+            # Giá < 10M thường là USD (999, 699...); quy đổi 1 USD ≈ 25,000 VND
+            if p < 10_000:
+                return int(p * 25_000)
+            return int(p)
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _format_products(products: List[Dict[str, Any]], max_items: int = 3) -> str:
+        """Format products for prompt - compact, tối đa max_items để giảm token và tăng tốc LLM."""
         if not products:
             return "Không có sản phẩm nào."
-        
+        products = products[:max_items]
         formatted_products = []
         for i, product in enumerate(products, 1):
             name = product.get("name", "Unknown")
             brand = product.get("brand", "Unknown")
-            price = product.get("price", 0)
+            price_vnd = PromptTemplates._price_for_display(product.get("price", 0))
             rating = product.get("rating", 0)
-            description = product.get("description", "")
-            specs = product.get("specifications", {})
-            
-            # Format specifications
-            specs_text = ""
-            if specs:
-                spec_items = []
-                for key, value in specs.items():
-                    spec_items.append(f"{key}: {value}")
-                specs_text = f" | {', '.join(spec_items)}"
-            
-            formatted_product = f"""
-{i}. {name} ({brand})
-   - Giá: {price:,} VNĐ
-   - Đánh giá: ⭐ {rating}/5
-   - Mô tả: {description}
-   - Thông số: {specs_text}
-   - Điểm phù hợp: {product.get('similarity_score', 0):.2f}
-"""
-            formatted_products.append(formatted_product)
-        
+            formatted_products.append(
+                f"{i}. {name} ({brand}) - Giá: {price_vnd:,} VNĐ - ⭐ {rating}/5"
+            )
         return "\n".join(formatted_products)
 
     @staticmethod

@@ -1018,7 +1018,7 @@ class AgnoRouter:
             
         except Exception as e:
             logger.error(f"Error in rule-based routing: {e}")
-        return "chat"
+            return "chat"
     
     def _update_metrics(self, response: Dict[str, Any], processing_time: float):
         """Update performance metrics"""
@@ -1065,17 +1065,18 @@ class AgnoRouter:
             if not self.rag_model:
                 return await self._handle_search_fallback(message, user_id, context)
             
-            # Check cache first
+            # Cache key: chuẩn hóa query để tăng cache hit (strip, lower)
+            query_normalized = (message or "").strip().lower()
             cache_key = {
                 "type": "search",
-                "query": message,
+                "query": query_normalized,
                 "user_id": user_id
             }
             
             cached_result = None
             if self.cache_manager:
                 cached_result = await self.cache_manager.get(
-                    cache_key, 
+                    cache_key,
                     data_type="query",
                     context={"is_search": True}
                 )
@@ -1084,22 +1085,20 @@ class AgnoRouter:
                 logger.info("Cache hit for search query")
                 return cached_result
             
-            # Use RAG model to search for products
+            # RAG search
             search_results = await self.rag_model.search_products(
                 query=message,
                 user_id=user_id,
                 top_k=5
             )
             
-            # Record user query for personalization
+            # Personalization: ghi nhận tương tác chạy nền, không chặn response
             if self.personalization_model and user_id:
-                await self.personalization_model.record_user_interaction(
-                    user_id=user_id,
-                    interaction_type="search",
-                    query=message
+                asyncio.create_task(
+                    self._safe_record_interaction(user_id, message)
                 )
             
-            # Get personalized recommendations
+            # Re-rank theo personalization (nếu bật)
             if self.personalization_model and user_id and search_results:
                 personalized_results = await self.personalization_model.get_personalized_recommendations(
                     user_id=user_id,
@@ -1109,12 +1108,13 @@ class AgnoRouter:
                 )
                 search_results = personalized_results
             
-            # Use interaction model to generate natural response
+            # Chỉ đưa top 3 sản phẩm vào LLM để giảm token và latency; metadata vẫn giữ đủ 5
             response = await self.interaction_model.generate_search_response(
                 query=message,
                 search_results=search_results,
                 user_id=user_id,
-                context=context
+                context=context,
+                max_products_in_prompt=3,
             )
             
             # Prepare result
@@ -1152,6 +1152,18 @@ class AgnoRouter:
                 "confidence": 0.0,
                 "metadata": {"error": str(e)}
             }
+    
+    async def _safe_record_interaction(self, user_id: str, query: str) -> None:
+        """Ghi nhận tương tác trong background; bắt lỗi để không ảnh hưởng request."""
+        try:
+            if self.personalization_model:
+                await self.personalization_model.record_user_interaction(
+                    user_id=user_id,
+                    interaction_type="search",
+                    query=query,
+                )
+        except Exception as e:
+            logger.warning(f"Background record_user_interaction failed: {e}")
     
     async def _handle_search_fallback(
         self,

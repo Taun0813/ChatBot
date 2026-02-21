@@ -22,6 +22,8 @@ Intelligent AI Agent system for e-commerce with **Hybrid Orchestrator** combinin
 - **Training**: Fine-tune models for e-commerce domain with complete data pipeline
 - **Production Ready**: FastAPI 0.115.6+, PyTorch 2.5.1+, modern async/await patterns
 
+**Mục lục nhanh:** [System Architecture](#system-architecture) · [Workflows](#workflows) · [Directory Structure](#directory-structure) · [Quick Start](#quick-start) · [Configuration](#configuration) · [API Endpoints](#usage) · [Testing](#testing) · [Monitoring](#monitoring)
+
 ## System Architecture
 
 ### Hybrid Orchestrator Architecture
@@ -63,6 +65,299 @@ graph TB
     U --> V[Response to Client]
 ```
 
+---
+
+## Workflows
+
+Các luồng xử lý chính của hệ thống, từ khởi động ứng dụng đến xử lý từng loại request.
+
+### Workflow 1: Khởi động ứng dụng (Startup)
+
+Luồng chạy khi `python app.py` hoặc uvicorn start.
+
+```mermaid
+sequenceDiagram
+    participant U as Uvicorn
+    participant App as FastAPI App
+    participant Config as config.get_settings()
+    participant Router as AgnoRouter
+    participant Cache as CacheManager
+    participant LLM as ModelLoader
+    participant PC as Pinecone (nếu RAG)
+    participant RAG as RAGModel
+    participant Int as InteractionModel
+    participant API as APIModel
+
+    U->>App: lifespan startup
+    App->>Config: get_settings()
+    App->>Router: AgnoRouter(config)
+    App->>Router: initialize()
+
+    Router->>Cache: _initialize_cache_manager()
+    Cache->>Cache: MemoryCache + RedisCache init
+
+    Router->>LLM: _initialize_model_loader()
+    LLM->>LLM: create_loader(backend, model_name, api_key)
+
+    alt RAG_ENABLED=true
+        Router->>PC: _initialize_pinecone()
+        Router->>RAG: _initialize_rag_model()
+    else RAG_ENABLED=false
+        Router->>Router: rag_model = None
+    end
+
+    Router->>Int: _initialize_interaction_model()
+    Router->>API: _initialize_api_model()
+
+    opt ENABLE_PERSONALIZATION=true
+        Router->>Router: _initialize_personalization_model()
+    end
+
+    opt enable_hybrid=true
+        Router->>Router: ml_router.initialize()
+    end
+
+    Router-->>App: initialized
+    App-->>U: yield (ready)
+```
+
+**Các bước:**
+
+1. **Lifespan** (`app.py`): FastAPI gọi `lifespan` → đọc `config` từ `.env`.
+2. **AgnoRouter(config)**: Tạo router với `rag_config`, `api_config`, `personalization_config`, `hybrid_config`.
+3. **initialize()**:
+   - Cache: khởi tạo MemoryCache + RedisCache (Redis fail → chỉ dùng memory).
+   - Model loader: tạo loader theo `MODEL_LOADER_BACKEND` (gemini/groq/openai/...) và `api_key`.
+   - Nếu `RAG_ENABLED=true`: init Pinecone client → init RAGModel (embedding qua Pinecone Inference).
+   - InteractionModel: dùng chung model loader cho chat và format search response.
+   - APIModel: cấu hình URL Spring Boot, `enable_api_calls`, timeout.
+   - Nếu `ENABLE_PERSONALIZATION=true`: ProfileManager + Recommender + PersonalizationModel.
+   - Nếu `enable_hybrid=true`: MLRouter (SimpleIntentClassifier, ContextAnalyzer, ConfidenceScorer).
+4. Router sẵn sàng; lifespan yield → app nhận request.
+
+---
+
+### Workflow 2: Xử lý request chính (/ask)
+
+Luồng từ khi client gọi `POST /ask` đến khi trả response.
+
+```mermaid
+flowchart TB
+    A[POST /ask] --> B[get_router]
+    B --> C[router.process_request]
+    C --> D{intent có sẵn?}
+    D -->|Có| E[_process_with_intent]
+    D -->|Không| F{enable_hybrid?}
+    F -->|Có| G[_process_hybrid_request]
+    F -->|Không| H[_process_rule_based_request]
+    G --> I[Rule + ML song song]
+    I --> J[DecisionFusionEngine.fuse_decisions]
+    J --> E
+    H --> K[_route_request rules]
+    K --> E
+    E --> L{intent?}
+    L -->|search| M[_handle_search_request]
+    L -->|order| N[_handle_order_request]
+    L -->|api| O[_handle_api_request]
+    L -->|chat| P[_handle_chat_request]
+    M --> Q[Response]
+    N --> Q
+    O --> Q
+    P --> Q
+    Q --> R[ChatResponse + metadata]
+    R --> S[Optional: training collect_conversation]
+    S --> T[Return 200]
+```
+
+**Các bước:**
+
+1. **Request**: Body gồm `message`, `user_id`, `session_id`, `context`, `intent` (tùy chọn).
+2. **Intent có sẵn**: Nếu client gửi `intent` → gọi trực tiếp `_process_with_intent(message, intent, ...)`.
+3. **Hybrid routing** (khi bật):
+   - Chạy song song: `_get_rule_decision(message)` và `_get_ml_decision(message)`.
+   - Rule: so khớp regex theo thứ tự priority → trả handler (search/order/api/chat).
+   - ML: ContextAnalyzer → SimpleIntentClassifier → map intent (product_search→search, order_inquiry→order, ...).
+   - Fusion: gộp confidence theo weight (rule_based/ml_based), chọn intent (ưu tiên ML nếu confidence > 0.8, else rule hoặc hybrid).
+4. **Rule-only**: Chỉ `_route_request(message)` → handler.
+5. **Dispatch theo intent**:
+   - **search** → `_handle_search_request`
+   - **order** → `_handle_order_request`
+   - **api** → `_handle_api_request`
+   - **chat** → `_handle_chat_request`
+6. **Response**: Trả `response`, `intent`, `confidence`, `metadata`; app thêm `model_info`, có thể gọi `training_pipeline.collect_conversation` (async).
+
+---
+
+### Workflow 3: Tìm kiếm sản phẩm (Search – RAG vs Fallback)
+
+Luồng khi intent = **search**.
+
+```mermaid
+flowchart TB
+    A[_handle_search_request] --> B{rag_model có?}
+    B -->|Không| C[_handle_search_fallback]
+    B -->|Có| D[Cache key: type=search, query, user_id]
+    D --> E{cache hit?}
+    E -->|Có| F[Return cached result]
+    E -->|Không| G[rag_model.search_products]
+    G --> H[Pinecone: embed query + search_products]
+    H --> I[_process_search_results]
+    I --> J{personalization_model + user_id?}
+    J -->|Có| K[record_user_interaction + get_personalized_recommendations]
+    J -->|Không| L[search_results]
+    K --> L
+    L --> M[interaction_model.generate_search_response]
+    M --> N[LLM: prompt + products → response]
+    N --> O[Build result + metadata]
+    O --> P[Cache set TTL 30min]
+    P --> Q[Return result]
+    C --> R[interaction_model.generate_response]
+    R --> S[LLM: chat only, no RAG]
+    S --> T[Return rag_disabled hint]
+```
+
+**Các bước:**
+
+1. **RAG tắt**: Gọi `_handle_search_fallback` → `InteractionModel.generate_response(message)` (chỉ LLM), metadata có `rag_disabled: true`.
+2. **RAG bật**:
+   - Tạo cache key từ query + user_id. Nếu cache hit → trả luôn.
+   - `RAGModel.search_products`: extract metadata từ query (giá, brand, category, specs) → embed query (Pinecone Inference `llama-text-embed-v2`) → `pinecone_client.search_products` (vector + filter) → `_process_search_results` (format, relevance score, parse specs string→dict). Có thể relaxed search nếu filter chặt không ra kết quả.
+   - Nếu bật personalization và có user_id: `record_user_interaction`, `get_personalized_recommendations` (re-rank).
+   - `InteractionModel.generate_search_response`: dùng `PromptTemplates.get_contextual_prompt` (query + products) → LLM trả lời tự nhiên.
+   - Lưu cache (TTL 1800s), trả result.
+
+---
+
+### Workflow 4: Đơn hàng & API (Order)
+
+Luồng khi intent = **order** hoặc **api**.
+
+```mermaid
+sequenceDiagram
+    participant R as Router
+    participant A as APIModel
+    participant S as Spring Boot
+
+    R->>R: _is_authenticated(user_id, context)
+    alt Không có user_id / auth
+        R-->>Client: auth_required response
+    end
+    R->>A: handle_order_request(message, user_id, context)
+    A->>A: _extract_order_id(message)
+    alt Không có order_id
+        A-->>R: "Cần số đơn hàng..."
+    end
+    alt ENABLE_API_CALLS=false
+        A-->>R: "Tính năng gọi API đang tắt"
+    end
+    A->>S: GET /orders/{order_id}
+    S-->>A: order JSON hoặc error
+    A->>A: _transform_order_response
+    A-->>R: response text
+    R-->>Client: intent=order, response, metadata
+```
+
+**Các bước:**
+
+1. **Auth**: `_is_authenticated(user_id, context)` — cần user_id hoặc context có `is_authenticated`/`jwt_token`. Không đủ → trả "Bạn cần đăng nhập...".
+2. **Order**: `APIModel.handle_order_request`: trích order id từ message (regex #\d+ hoặc \d{4,}) → nếu không có id trả "Cần số đơn hàng...". Nếu `enable_api_calls=false` trả message tắt API.
+3. **Gọi service**: HTTP GET `order_service_url/{order_id}`, header Authorization nếu có api_key. Transform response → text trả về.
+4. **API chung**: intent=api → `handle_general_request` (tương tự, tùy message có thể gọi order/payment/warranty/product).
+
+---
+
+### Workflow 5: Hội thoại chung (Chat)
+
+Luồng khi intent = **chat**.
+
+```mermaid
+flowchart LR
+    A[_handle_chat_request] --> B[interaction_model.generate_response]
+    B --> C[_create_system_prompt]
+    C --> D[Prompt: trợ lý bán hàng, tiếng Việt, không bịa]
+    D --> E[conversation_prompt = system + Người dùng: message + Trợ lý AI:]
+    E --> F[model_loader.generate_response]
+    F --> G[LLM API]
+    G --> H[response text]
+    H --> I[Return intent=chat, confidence=0.8]
+```
+
+**Các bước:**
+
+1. `InteractionModel.generate_response(message, user_id, context)`.
+2. Tạo system prompt (trợ lý bán hàng, tiếng Việt, tư vấn chính xác, hỗ trợ đơn hàng/bảo hành).
+3. Ghép prompt: system + "Người dùng: {message}\nTrợ lý AI:".
+4. Gọi `model_loader.generate_response(prompt, max_tokens=512, temperature=0.7)`.
+5. Trả response; nếu lỗi → fallback "Xin lỗi, tôi gặp lỗi...".
+
+---
+
+### Workflow 6: Khởi tạo dữ liệu (init_data.py)
+
+Luồng load sản phẩm từ CSV/JSON lên Pinecone (chạy tay khi cần).
+
+```mermaid
+flowchart TB
+    A[python init_data.py path] --> B[DataInitializer]
+    B --> C[initialize: Pinecone + ModelLoader + RAGModel]
+    C --> D[load_dataset path]
+    D --> E{format?}
+    E -->|.json| F[generic_json: list hoặc .products/.items]
+    E -->|.csv Mobiles| G[mobile_csv: pandas, transform_product_data]
+    E -->|.csv khác| H[generic_csv]
+    F --> I[transform_product_data_generic]
+    G --> J[transform_product_data CSV]
+    I --> K[ingest_products batch]
+    J --> K
+    K --> L[rag_model.upsert_product từng sản phẩm]
+    L --> M[Pinecone: embed qua Inference + upsert_vectors]
+    M --> N[Log success/failed]
+```
+
+**Các bước:**
+
+1. **DataInitializer**: Khởi tạo Pinecone client, ModelLoader, RAGModel (giống app nhưng độc lập).
+2. **load_dataset(path)**: Auto detect format: `.json` → generic_json; CSV có "Mobiles" → mobile_csv; còn lại → generic_csv.
+3. **Transform**:
+   - **mobile_csv**: `transform_product_data` — map cột Company Name, Model Name, Launched Price (USA), RAM, Screen Size, Battery, Camera... → product schema (id, name, brand, price VND, description, specifications).
+   - **generic_json**: `transform_product_data_generic` — map name, brand, category, price, specifications, ...
+4. **ingest_products**: Chia batch (mặc định 50); mỗi sản phẩm → `rag_model.upsert_product` (tạo text → embed qua Pinecone Inference → upsert vector + metadata vào namespace "default").
+5. Có thể dùng `export_products_to_json` để chỉ transform và xuất JSON không đẩy Pinecone.
+
+---
+
+### Workflow 7: Training & Fine-tuning (tùy chọn)
+
+Thu thập hội thoại và chạy pipeline training (module có thể chưa có đầy đủ).
+
+```mermaid
+flowchart TB
+    subgraph Mỗi /ask
+        A[ask endpoint] --> B[response xong]
+        B --> C[get_training_pipeline]
+        C --> D[collect_conversation]
+        D --> E[buffer: user_message, assistant_response, intent, ...]
+    end
+    subgraph Training thủ công
+        F[POST /training/start] --> G[training_pipeline.start_training_pipeline]
+        G --> H[data_source: dataset | conversations]
+        H --> I[prepare_data / load buffer]
+        I --> J[finetune / evaluate]
+    end
+    subgraph Trạng thái
+        K[GET /training/status]
+        L[GET /training/history]
+    end
+```
+
+**Các bước:**
+
+1. **Thu thập**: Sau mỗi `/ask`, nếu import được `training_pipeline` → `get_training_pipeline().collect_conversation(conversation)` (user_message, assistant_response, intent, confidence, user_id, session_id, timestamp).
+2. **Start**: `POST /training/start` (data_source, auto_mode) → gọi `start_training_pipeline`; có thể dùng dataset cố định hoặc buffer từ conversations.
+3. **Status/History**: `GET /training/status`, `GET /training/history` — trả trạng thái và lịch sử training (nếu module có implement).
+
+---
+
 ## Directory Structure
 
 ```
@@ -77,6 +372,12 @@ ai_agent/
 ├── railway.json                  # Railway deployment config
 ├── DEPLOYMENT.md                 # Hướng dẫn deploy chi tiết
 ├── ECOMMERCE_AI_AGENT_ROADMAP.md # Roadmap E-commerce
+├── docs/                         # Tài liệu & test
+│   ├── OPTIMIZATION_AND_ROADMAP.md # Đề xuất tối ưu và phát triển
+│   ├── TEST_QUESTIONS.md         # Bộ câu hỏi test hệ thống
+│   └── test_questions.json      # Test cases E2E/regression
+├── scripts/                      # Scripts tiện ích
+│   └── run_test_questions.py    # Chạy bộ câu hỏi test (/ask)
 │
 ├── core/                         # Core logic (Hybrid Orchestrator)
 │   ├── models/                   # Agent models
@@ -491,6 +792,13 @@ pytest tests/test_router.py
 
 # Run with coverage
 pytest --cov=core tests/
+```
+
+**Bộ câu hỏi test (E2E):** Danh sách câu hỏi và test cases để kiểm tra routing (search/order/chat/api) — xem [docs/TEST_QUESTIONS.md](docs/TEST_QUESTIONS.md) và [docs/test_questions.json](docs/test_questions.json). Chạy script (cần server đang chạy):
+
+```bash
+python scripts/run_test_questions.py
+python scripts/run_test_questions.py --url http://localhost:8000 --json docs/test_questions.json
 ```
 
 ## Monitoring
