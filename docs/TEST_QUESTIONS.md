@@ -26,6 +26,37 @@ Dùng để kiểm thử routing (search / order / api / chat), chất lượng 
 - Màn hình lớn, xem phim.
 - So sánh Samsung S24 và iPhone 15.
 
+### 1.6 So sánh 2 sản phẩm (mới)
+- So sánh iPhone 15 và Samsung S24.
+- So sánh Xiaomi 14 với iPhone 14, máy nào đáng mua hơn?
+- Compare iPhone 13 vs iPhone 14.
+- Cho mình đối chiếu Oppo Reno 11 và Vivo V30.
+
+Kỳ vọng:
+- Intent là `search`.
+- Metadata có `comparison_mode: true`.
+- Kết quả có đúng 2 sản phẩm trong `metadata.search_results`.
+
+### 1.7 Kiểm tra tồn kho (mới)
+- iPhone 15 còn hàng không?
+- Kiểm tra tồn kho Samsung S24.
+- Mẫu Xiaomi 13 đã hết hàng chưa?
+- Check stock giúp mình OnePlus 12.
+
+Kỳ vọng:
+- Intent là `search`.
+- Metadata có `stock_check: true`.
+- Response trả trạng thái `Còn hàng/Hết hàng` và số lượng ước tính.
+
+### 1.8 Hỏi rõ thông số (mới)
+- Tìm điện thoại cấu hình tốt.
+- Mình cần máy mạnh để dùng lâu dài.
+- Tư vấn giúp máy thông số ngon.
+
+Kỳ vọng:
+- Bot hỏi lại để làm rõ (RAM/ROM/pin/camera/màn hình).
+- Metadata có `action_required: clarification` và `clarification_type: specifications`.
+
 ### 1.4 Đa danh mục (Laptop, Tablet, Phụ kiện)
 - Laptop văn phòng dưới 20 triệu.
 - Tablet cho con học online.
@@ -129,6 +160,36 @@ Dùng để kiểm thử routing (search / order / api / chat), chất lượng 
 - Gửi “đơn 1234” với `user_id` có giá trị vs không có: kiểm tra auth required cho order.
 - Gửi “xin chào” rồi “tìm Samsung” trong cùng `session_id`: kiểm tra session/context (nếu đã implement).
 
+### 6.1 Test nhớ ngữ cảnh theo session (mới)
+
+**Case A - Follow-up thông số**
+
+1) Lượt 1:
+```json
+{"message":"Tìm điện thoại chơi game cấu hình tốt","user_id":"u_ctx","session_id":"s_ctx_01"}
+```
+
+2) Lượt 2 (cùng session):
+```json
+{"message":"RAM 8GB, ROM 256GB","user_id":"u_ctx","session_id":"s_ctx_01"}
+```
+
+Kỳ vọng:
+- Lượt 2 có `metadata.session_memory_used = true`.
+- Lượt 2 có `metadata.history_turns > 0`.
+- Lượt 2 có `metadata.resolved_search_query` chứa cả ý lượt 1 + lượt 2.
+
+**Case B - Session khác không dùng ngữ cảnh cũ**
+
+3) Lượt 3 (đổi session mới):
+```json
+{"message":"RAM 8GB, ROM 256GB","user_id":"u_ctx","session_id":"s_ctx_02"}
+```
+
+Kỳ vọng:
+- Không ghép query từ session cũ.
+- `history_turns` thấp hoặc bằng 0 ở request đầu session mới.
+
 ---
 
 ## 7. Ghi chú khi chạy test
@@ -141,6 +202,9 @@ Dùng để kiểm thử routing (search / order / api / chat), chất lượng 
 | **Chat** | Câu trả lời bằng tiếng Việt, không bịa thông tin sản phẩm. |
 | **Latency** | Ghi nhận thời gian phản hồi (search thường chậm hơn chat). |
 | **Cache** | Cùng query 2 lần: lần 2 nhanh hơn và metadata có `cached: true` (nếu có). |
+| **Comparison** | Query so sánh phải có `comparison_mode: true` và trả 2 sản phẩm để đối chiếu. |
+| **Stock** | Query tồn kho phải có `stock_check: true`, kèm trạng thái còn/hết và số lượng ước tính. |
+| **Context Memory** | Follow-up cùng `session_id` phải có `session_memory_used`, `history_turns`, `resolved_search_query`. |
 
 ---
 

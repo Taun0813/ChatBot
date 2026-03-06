@@ -1,7 +1,7 @@
 {
   "user_id": "user1",
   "created_at": "2026-02-03T23:34:10.372467",
-  "last_accessed": "2026-02-03T23:34:10.376469",
+  "last_accessed": "2026-02-22T10:08:16.597205",
   "preferences": {
     "brands": {},
     "categories": {},
@@ -11,8 +11,8 @@
   },
   "search_history": [
     {
-      "query": "tìm kiếm điện thoại giá trên 1500",
-      "timestamp": "2026-02-03T23:38:33.847296"
+      "query": "tìm điện thoại Samsung.",
+      "timestamp": "2026-02-22T10:08:16.610179"
     }
   ],
   "purchase_history": [],
@@ -20,9 +20,9 @@
     {
       "type": "search",
       "product_id": null,
-      "query": "tìm kiếm điện thoại giá trên 1500",
+      "query": "tìm điện thoại Samsung.",
       "rating": null,
-      "timestamp": "2026-02-03T23:38:33.847296"
+      "timestamp": "2026-02-22T10:08:16.610179"
     }
   ],
   "profile_data": {

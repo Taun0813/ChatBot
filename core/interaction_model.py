@@ -46,10 +46,13 @@ class InteractionModel:
             
             # Create system prompt
             system_prompt = self._create_system_prompt(user_id, context)
+            history_block = self._format_history_for_prompt(context)
             
             # Create conversation prompt
             conversation_prompt = f"""
 {system_prompt}
+
+{history_block}
 
 Người dùng: {message}
 
@@ -100,7 +103,12 @@ Trợ lý AI:"""
                 max_tokens=768,
                 temperature=0.5,
             )
-            return (response or "").strip()
+
+            # Chỉ trả về câu đầu tiên (thường là lời chào/xác nhận nhu cầu),
+            # phần list sản phẩm sẽ được UI hiển thị từ metadata.search_results.
+            text = (response or "").strip()
+            first_line = text.split("\n", 1)[0].strip()
+            return first_line
             
         except Exception as e:
             logger.error(f"Failed to generate search response: {e}")
@@ -124,6 +132,26 @@ Hãy luôn:
 - Luôn sẵn sàng hỗ trợ về đơn hàng, bảo hành và thanh toán
 
 Nếu không chắc chắn về thông tin, hãy nói rõ và đề xuất cách tìm hiểu thêm."""
+
+    def _format_history_for_prompt(self, context: Optional[Dict[str, Any]]) -> str:
+        """Format short recent conversation history to improve multi-turn memory."""
+        context = context or {}
+        history = context.get("conversation_history") or []
+        if not isinstance(history, list) or not history:
+            return ""
+
+        lines = ["Ngữ cảnh hội thoại gần đây:"]
+        for turn in history[-4:]:
+            if not isinstance(turn, dict):
+                continue
+            user_text = str(turn.get("user", "")).strip()
+            assistant_text = str(turn.get("assistant", "")).strip()
+            if user_text:
+                lines.append(f"- Người dùng: {user_text}")
+            if assistant_text:
+                lines.append(f"- Trợ lý: {assistant_text}")
+
+        return "\n".join(lines)
     
     def _create_search_prompt(
         self, 

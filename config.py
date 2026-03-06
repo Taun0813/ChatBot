@@ -42,9 +42,9 @@ class Settings(BaseSettings):
     enable_api_calls: bool = Field(False, alias="ENABLE_API_CALLS")
 
     # Model Configuration
-    model_name: str = Field("gemini-2.5-flash", alias="MODEL_NAME")
+    model_name: str = Field("gemini-3-flash", alias="MODEL_NAME")
     max_tokens: int = Field(2048, alias="MAX_TOKENS")
-    temperature: float = Field(0.7, alias="TEMPERATURE")
+    temperature: float = Field(0.6, alias="TEMPERATURE")
     top_p: float = Field(0.9, alias="TOP_P")
 
     # Personalization (tắt mặc định để tránh lỗi DB khi chưa setup)

@@ -531,6 +531,7 @@ class AgnoRouter:
         self.pinecone_client = None
         self.cache_manager = None
         self.model_loader = None
+        self.max_conversation_history = 8
         
         # Hybrid Orchestrator components
         self.ml_router = MLRouter()
@@ -557,6 +558,7 @@ class AgnoRouter:
             Rule("product_search", r"(tìm|mua|mua|điện thoại|iphone|samsung|xiaomi|oppo|vivo|realme|oneplus|huawei|nokia|motorola|lg|sony)", "search", priority=10),
             Rule("product_search_price", r"(dưới|trên|khoảng|từ|đến|giá|vnd|triệu|nghìn)", "search", priority=9),
             Rule("product_search_specs", r"(pin|camera|ram|rom|màn hình|chơi game|chụp ảnh|battery|storage|display)", "search", priority=8),
+            Rule("product_stock_check", r"(tồn kho|còn hàng|hết hàng|stock)", "search", priority=8),
             Rule("product_comparison", r"(so sánh|so sanh|compare|đối chiếu)", "search", priority=7),
             
             # Order-related rules
@@ -643,20 +645,23 @@ class AgnoRouter:
         """Initialize cache manager"""
         try:
             from cache.cache_manager import CacheManager
+            from config import get_settings
+
+            settings = get_settings()
             
             # Cache configuration
             cache_config = {
                 "memory_cache_config": {
-                    "max_size": 1000,
-                    "default_ttl": 300,  # 5 minutes
+                    "max_size": settings.memory_cache_size,
+                    "default_ttl": settings.memory_cache_ttl,
                     "cleanup_interval": 60
                 },
                 "redis_cache_config": {
-                    "host": "localhost",
-                    "port": 6379,
-                    "db": 0,
-                    "default_ttl": 3600,  # 1 hour
-                    "key_prefix": "ai_agent:",
+                    "host": settings.redis_cache_host,
+                    "port": settings.redis_cache_port,
+                    "db": settings.redis_cache_db,
+                    "default_ttl": settings.redis_cache_ttl,
+                    "key_prefix": settings.redis_cache_prefix,
                     "fallback_to_memory": True
                 }
             }
@@ -738,13 +743,16 @@ class AgnoRouter:
                 "payment_service_url": api_config.get("payment_service_url"),
                 "warranty_service_url": api_config.get("warranty_service_url"),
                 "product_service_url": api_config.get("product_service_url"),
+                "jwt_token": api_config.get("jwt_token"),
                 "order_service_api_key": api_config.get("order_service_api_key"),
                 "payment_service_api_key": api_config.get("payment_service_api_key"),
                 "warranty_service_api_key": api_config.get("warranty_service_api_key"),
                 "product_service_api_key": api_config.get("product_service_api_key"),
                 "api_timeout": api_config.get("api_timeout", 30),
-                "enable_api_calls": api_config.get("enable_api_calls", False),
+                "enable_api_calls": api_config.get("enable_api_calls", True),
             })
+
+            await self.api_model.initialize()
             
             logger.info("API model initialized (enable_api_calls=%s)", api_config.get("enable_api_calls", False))
             
@@ -827,6 +835,10 @@ class AgnoRouter:
             # Prepare context
             if context is None:
                 context = {}
+
+            # Hydrate multi-turn memory from cache (Redis/Memory)
+            session_memory = await self._load_session_memory(user_id=user_id, session_id=session_id)
+            context = self._apply_session_memory_to_context(message, context, session_memory)
             
             context.update({
                 "user_id": user_id,
@@ -844,6 +856,21 @@ class AgnoRouter:
             # Add session information
             response["session_id"] = session_id
             response["user_id"] = user_id
+
+            response.setdefault("metadata", {})
+            response["metadata"]["session_memory_used"] = bool(session_memory)
+            response["metadata"]["history_turns"] = len(context.get("conversation_history", []) or [])
+            if context.get("resolved_search_query"):
+                response["metadata"]["resolved_search_query"] = context.get("resolved_search_query")
+
+            # Persist conversation memory for next turns
+            await self._save_session_memory(
+                user_id=user_id,
+                session_id=session_id,
+                message=message,
+                response=response,
+                prior_memory=session_memory,
+            )
             
             # Update metrics
             processing_time = time.time() - start_time
@@ -861,6 +888,138 @@ class AgnoRouter:
                 "confidence": 0.0,
                 "metadata": {"error": str(e)}
             }
+
+    def _build_session_memory_key(self, user_id: Optional[str], session_id: Optional[str]) -> Optional[Dict[str, Any]]:
+        """Build deterministic key for session memory."""
+        if not user_id and not session_id:
+            return None
+        return {
+            "type": "session_memory",
+            "user_id": user_id or "guest",
+            "session_id": session_id or "default",
+        }
+
+    async def _load_session_memory(self, user_id: Optional[str], session_id: Optional[str]) -> Dict[str, Any]:
+        """Load multi-turn memory from cache manager."""
+        try:
+            if not self.cache_manager:
+                return {}
+            cache_key = self._build_session_memory_key(user_id, session_id)
+            if not cache_key:
+                return {}
+
+            memory = await self.cache_manager.get(
+                cache_key,
+                data_type="session",
+                context={"is_session_data": True},
+            )
+            if isinstance(memory, dict):
+                return memory
+            return {}
+        except Exception as e:
+            logger.warning(f"Failed to load session memory: {e}")
+            return {}
+
+    def _apply_session_memory_to_context(
+        self,
+        message: str,
+        context: Dict[str, Any],
+        memory: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Hydrate context with memory and resolve clarification follow-ups."""
+        hydrated = dict(context or {})
+        history = memory.get("history", []) if isinstance(memory, dict) else []
+        pending = memory.get("pending_clarification") if isinstance(memory, dict) else None
+        last_search_query = memory.get("last_search_query") if isinstance(memory, dict) else None
+
+        hydrated["conversation_history"] = history[-self.max_conversation_history :]
+        hydrated["previous_intent"] = memory.get("last_intent") if isinstance(memory, dict) else None
+        hydrated["last_search_query"] = last_search_query
+        hydrated["pending_clarification"] = pending
+
+        # If previous turn asked for specs clarification, merge follow-up into previous search query
+        if (
+            isinstance(pending, dict)
+            and pending.get("type") == "specifications"
+            and isinstance(last_search_query, str)
+            and last_search_query.strip()
+            and self._looks_like_spec_followup(message)
+        ):
+            hydrated["resolved_search_query"] = f"{last_search_query} {message}".strip()
+            hydrated["consume_pending_clarification"] = True
+
+        return hydrated
+
+    def _looks_like_spec_followup(self, message: str) -> bool:
+        """Heuristic for short follow-up messages that add specification values."""
+        if not (message or "").strip():
+            return False
+        msg = message.lower().strip()
+        if len(msg) <= 48:
+            return True
+        return any(keyword in msg for keyword in ["ram", "rom", "gb", "mah", "camera", "màn hình", "inch", "pin"])
+
+    async def _save_session_memory(
+        self,
+        user_id: Optional[str],
+        session_id: Optional[str],
+        message: str,
+        response: Dict[str, Any],
+        prior_memory: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Persist conversation memory for future turns."""
+        try:
+            if not self.cache_manager:
+                return
+            cache_key = self._build_session_memory_key(user_id, session_id)
+            if not cache_key:
+                return
+
+            memory = dict(prior_memory or {})
+            history = memory.get("history", [])
+            if not isinstance(history, list):
+                history = []
+
+            history.append(
+                {
+                    "user": message,
+                    "assistant": response.get("response", ""),
+                    "intent": response.get("intent", "unknown"),
+                    "timestamp": time.time(),
+                }
+            )
+            history = history[-self.max_conversation_history :]
+
+            metadata = response.get("metadata") or {}
+            pending_clarification = None
+            if metadata.get("action_required") == "clarification":
+                pending_clarification = {
+                    "type": metadata.get("clarification_type", "general"),
+                    "created_at": time.time(),
+                }
+            elif response.get("intent") == "search":
+                pending_clarification = None
+            else:
+                pending_clarification = memory.get("pending_clarification")
+
+            memory_payload = {
+                "history": history,
+                "last_intent": response.get("intent"),
+                "last_response": response.get("response", ""),
+                "last_search_query": message if response.get("intent") == "search" and metadata.get("action_required") != "clarification" else memory.get("last_search_query"),
+                "pending_clarification": pending_clarification,
+                "updated_at": time.time(),
+            }
+
+            await self.cache_manager.set(
+                cache_key,
+                memory_payload,
+                data_type="session",
+                ttl=3600,
+                context={"is_session_data": True},
+            )
+        except Exception as e:
+            logger.warning(f"Failed to save session memory: {e}")
     
     async def _process_hybrid_request(
         self, 
@@ -1061,12 +1220,15 @@ class AgnoRouter:
     ) -> Dict[str, Any]:
         """Handle product search requests using RAG with personalization and caching"""
         try:
+            context = context or {}
+            effective_message = context.get("resolved_search_query") or message
+
             # RAG disabled: fallback to conversation model
             if not self.rag_model:
-                return await self._handle_search_fallback(message, user_id, context)
+                return await self._handle_search_fallback(effective_message, user_id, context)
             
             # Cache key: chuẩn hóa query để tăng cache hit (strip, lower)
-            query_normalized = (message or "").strip().lower()
+            query_normalized = (effective_message or "").strip().lower()
             cache_key = {
                 "type": "search",
                 "query": query_normalized,
@@ -1084,10 +1246,116 @@ class AgnoRouter:
             if cached_result:
                 logger.info("Cache hit for search query")
                 return cached_result
+
+            # Clarification flow for ambiguous spec requests
+            clarification_question = await self.rag_model.get_spec_clarification_question(effective_message)
+            if clarification_question:
+                return {
+                    "response": clarification_question,
+                    "intent": "search",
+                    "confidence": 0.92,
+                    "metadata": {
+                        "action_required": "clarification",
+                        "clarification_type": "specifications",
+                        "cached": False,
+                    },
+                }
+
+            # Product comparison flow
+            if self._is_comparison_request(effective_message):
+                products_to_compare = await self.rag_model.resolve_products_for_comparison(
+                    query=effective_message,
+                    user_id=user_id,
+                    top_k=8,
+                )
+
+                if len(products_to_compare) < 2:
+                    return {
+                        "response": "Mình cần ít nhất 2 sản phẩm để so sánh. Bạn cho mình tên chính xác 2 mẫu (ví dụ: iPhone 15 và Samsung S24) nhé.",
+                        "intent": "search",
+                        "confidence": 0.75,
+                        "metadata": {
+                            "comparison_mode": True,
+                            "results_count": len(products_to_compare),
+                            "cached": False,
+                        },
+                    }
+
+                comparison_response = await self.interaction_model.generate_comparison_response(
+                    products=products_to_compare[:2],
+                    user_id=user_id,
+                )
+                return {
+                    "response": comparison_response,
+                    "intent": "search",
+                    "confidence": 0.94,
+                    "metadata": {
+                        "comparison_mode": True,
+                        "results_count": len(products_to_compare[:2]),
+                        "search_results": products_to_compare[:2],
+                        "product_links": [
+                            item.get("product_url") for item in products_to_compare[:2] if item.get("product_url")
+                        ],
+                        "specs_links": [
+                            item.get("specs_url") for item in products_to_compare[:2] if item.get("specs_url")
+                        ],
+                        "model_used": "rag",
+                        "cached": False,
+                    },
+                }
+
+            # Stock checking flow
+            if self._is_stock_check_request(effective_message):
+                stock_results = await self.rag_model.search_products(
+                    query=effective_message,
+                    user_id=user_id,
+                    top_k=5,
+                )
+
+                if not stock_results:
+                    return {
+                        "response": "Mình chưa tìm thấy sản phẩm tương ứng để kiểm tra tồn kho. Bạn cho mình tên mẫu cụ thể hơn nhé.",
+                        "intent": "search",
+                        "confidence": 0.7,
+                        "metadata": {
+                            "stock_check": True,
+                            "results_count": 0,
+                            "cached": False,
+                        },
+                    }
+
+                lines = ["Tình trạng tồn kho hiện tại:"]
+                for i, product in enumerate(stock_results[:3], 1):
+                    stock = int(product.get("stock", 0) or 0)
+                    availability = str(product.get("availability", "")).lower()
+                    if stock > 0 or "còn hàng" in availability or "in stock" in availability:
+                        status = "Còn hàng"
+                    else:
+                        status = "Hết hàng"
+                    lines.append(f"{i}. {product.get('name', 'Unknown')} ({product.get('brand', 'Unknown')}) - {status} (ước tính: {stock} sản phẩm)")
+
+                return {
+                    "response": "\n".join(lines),
+                    "intent": "search",
+                    "confidence": 0.9,
+                    "metadata": {
+                        "stock_check": True,
+                        "results_count": len(stock_results),
+                        "search_results": stock_results,
+                        "product_links": [
+                            item.get("product_url") for item in stock_results if item.get("product_url")
+                        ],
+                        "specs_links": [
+                            item.get("specs_url") for item in stock_results if item.get("specs_url")
+                        ],
+                        "model_used": "rag",
+                        "cached": False,
+                    },
+                }
             
             # RAG search
             search_results = await self.rag_model.search_products(
-                query=message,
+                query=effective_message,
                 user_id=user_id,
                 top_k=5
             )
@@ -1095,14 +1363,14 @@ class AgnoRouter:
             # Personalization: ghi nhận tương tác chạy nền, không chặn response
             if self.personalization_model and user_id:
                 asyncio.create_task(
-                    self._safe_record_interaction(user_id, message)
+                    self._safe_record_interaction(user_id, effective_message)
                 )
             
             # Re-rank theo personalization (nếu bật)
             if self.personalization_model and user_id and search_results:
                 personalized_results = await self.personalization_model.get_personalized_recommendations(
                     user_id=user_id,
-                    query=message,
+                    query=effective_message,
                     search_results=search_results,
                     max_recommendations=5
                 )
@@ -1110,7 +1378,7 @@ class AgnoRouter:
             
             # Chỉ đưa top 3 sản phẩm vào LLM để giảm token và latency; metadata vẫn giữ đủ 5
             response = await self.interaction_model.generate_search_response(
-                query=message,
+                query=effective_message,
                 search_results=search_results,
                 user_id=user_id,
                 context=context,
@@ -1124,8 +1392,15 @@ class AgnoRouter:
                 "confidence": 0.9,
                 "metadata": {
                     "search_results": search_results,
+                    "product_links": [
+                        item.get("product_url") for item in search_results if item.get("product_url")
+                    ],
+                    "specs_links": [
+                        item.get("specs_url") for item in search_results if item.get("specs_url")
+                    ],
                     "results_count": len(search_results),
                     "model_used": "rag",
+                    "resolved_query": effective_message,
                     "personalized": self.personalization_model is not None and user_id is not None,
                     "cached": False
                 }
@@ -1152,6 +1427,20 @@ class AgnoRouter:
                 "confidence": 0.0,
                 "metadata": {"error": str(e)}
             }
+
+    def _is_comparison_request(self, message: str) -> bool:
+        """Detect if user asks to compare products."""
+        if not (message or "").strip():
+            return False
+        message_lower = message.lower()
+        return any(keyword in message_lower for keyword in ["so sánh", "so sanh", "compare", "đối chiếu", "vs", "so với"])
+
+    def _is_stock_check_request(self, message: str) -> bool:
+        """Detect if user asks to check stock/availability."""
+        if not (message or "").strip():
+            return False
+        message_lower = message.lower()
+        return any(keyword in message_lower for keyword in ["tồn kho", "còn hàng", "hết hàng", "stock"])
     
     async def _safe_record_interaction(self, user_id: str, query: str) -> None:
         """Ghi nhận tương tác trong background; bắt lỗi để không ảnh hưởng request."""

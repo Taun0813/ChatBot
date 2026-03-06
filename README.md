@@ -2,6 +2,10 @@
 
 Intelligent AI Agent system for e-commerce with **Hybrid Orchestrator** combining rule-based and ML-based routing. Hỗ trợ 900+ điện thoại và đa danh mục (Laptop, Tablet, Phụ kiện).
 
+> 📌 Bản tài liệu tổng hợp mới nhất: `README_NEW.md`
+>
+> 📌 Bộ câu hỏi test chức năng: `docs/TEST_QUESTIONS.md`
+
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115.6+-green.svg)](https://fastapi.tiangolo.com)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://docker.com)
