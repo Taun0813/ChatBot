@@ -210,7 +210,8 @@ class PineconeClient:
         top_k: int = 5,
         price_range: Optional[Tuple[float, float]] = None,
         brand: Optional[str] = None,
-        category: Optional[str] = None
+        category: Optional[str] = None,
+        only_live_products: bool = True,
     ) -> List[Dict[str, Any]]:
         """
         Search for products using vector similarity
@@ -221,6 +222,7 @@ class PineconeClient:
             price_range: Optional price range filter (min_price, max_price)
             brand: Optional brand filter
             category: Optional category filter
+            only_live_products: Keep only products with metadata is_live=true
         
         Returns:
             List of product search results
@@ -246,6 +248,9 @@ class PineconeClient:
             
             if category:
                 filter_dict["category"] = {"$eq": category}
+
+            if only_live_products:
+                filter_dict["is_live"] = {"$eq": True}
             
             # Search vectors
             results = await self.search_vectors(

@@ -1,353 +1,14 @@
-# """
-# RAG Model - Retrieval-Augmented Generation for product search
-# Handles vector search and response generation
-# """
-
-# import asyncio
-# import logging
-# from typing import List, Dict, Any, Optional, Tuple
-# import numpy as np
-# from sentence_transformers import SentenceTransformer
-
-# logger = logging.getLogger(__name__)
-
-# class RAGModel:
-#     """
-#     RAG Model for product search and knowledge retrieval
-    
-#     Features:
-#     - Vector similarity search using Pinecone
-#     - Product filtering and ranking
-#     - Context-aware response generation
-#     - User personalization integration
-#     """
-    
-#     def __init__(
-#         self,
-#         pinecone_client,
-#         model_loader,
-#         embedding_model_name: str = "intfloat/multilingual-e5-base"
-#     ):
-#         self.pinecone_client = pinecone_client
-#         self.model_loader = model_loader
-#         self.embedding_model_name = embedding_model_name
-#         self.embedding_model = None
-        
-#     async def initialize(self):
-#         """Initialize RAG model components"""
-#         try:
-#             logger.info("Initializing RAG model...")
-            
-#             # Initialize embedding model
-#             await self._initialize_embedding_model()
-            
-#             logger.info("RAG model initialized successfully")
-            
-#         except Exception as e:
-#             logger.error(f"Failed to initialize RAG model: {e}")
-#             raise
-    
-#     async def _initialize_embedding_model(self):
-#         """Initialize sentence transformer for embeddings"""
-#         try:
-#             logger.info(f"Loading embedding model: {self.embedding_model_name}")
-            
-#             # Load sentence transformer model
-#             self.embedding_model = SentenceTransformer(self.embedding_model_name)
-            
-#             logger.info("Embedding model loaded successfully")
-            
-#         except Exception as e:
-#             logger.error(f"Failed to load embedding model: {e}")
-#             raise
-    
-#     async def search_products(
-#         self,
-#         query: str,
-#         user_id: Optional[str] = None,
-#         top_k: int = 5,
-#         price_range: Optional[Tuple[float, float]] = None,
-#         brand: Optional[str] = None,
-#         category: Optional[str] = None
-#     ) -> List[Dict[str, Any]]:
-#         """
-#         Search for products using RAG
-        
-#         Args:
-#             query: Search query
-#             user_id: User ID for personalization
-#             top_k: Number of results to return
-#             price_range: Optional price range filter
-#             brand: Optional brand filter
-#             category: Optional category filter
-        
-#         Returns:
-#             List of product search results
-#         """
-#         try:
-#             logger.info(f"Searching products for query: {query}")
-            
-#             # Generate query embedding
-#             query_embedding = await self._generate_embedding(query)
-            
-#             # Search in Pinecone
-#             search_results = await self.pinecone_client.search_products(
-#                 query_vector=query_embedding,
-#                 top_k=top_k,
-#                 price_range=price_range,
-#                 brand=brand,
-#                 category=category
-#             )
-            
-#             # Process and format results
-#             products = await self._process_search_results(search_results, user_id)
-            
-#             logger.info(f"Found {len(products)} products")
-#             return products
-            
-#         except Exception as e:
-#             logger.error(f"Failed to search products: {e}")
-#             raise
-    
-#     async def _generate_embedding(self, text: str) -> List[float]:
-#         """Generate embedding for text"""
-#         try:
-#             if not self.embedding_model:
-#                 raise ValueError("Embedding model not initialized")
-            
-#             # Generate embedding
-#             embedding = self.embedding_model.encode(text, convert_to_tensor=False)
-            
-#             # Convert to list if needed
-#             if isinstance(embedding, np.ndarray):
-#                 embedding = embedding.tolist()
-            
-#             return embedding
-            
-#         except Exception as e:
-#             logger.error(f"Failed to generate embedding: {e}")
-#             raise
-    
-#     async def _process_search_results(
-#         self,
-#         search_results: List[Dict[str, Any]],
-#         user_id: Optional[str] = None
-#     ) -> List[Dict[str, Any]]:
-#         """Process and format search results"""
-#         try:
-#             products = []
-            
-#             for result in search_results:
-#                 product_info = result.get("product_info", {})
-                
-#                 # Format product data
-#                 product = {
-#                     "id": result["id"],
-#                     "name": product_info.get("name", "Unknown Product"),
-#                     "brand": product_info.get("brand", "Unknown Brand"),
-#                     "price": product_info.get("price", 0),
-#                     "description": product_info.get("description", ""),
-#                     "category": product_info.get("category", "Unknown"),
-#                     "image_url": product_info.get("image_url", ""),
-#                     "rating": product_info.get("rating", 0),
-#                     "reviews_count": product_info.get("reviews_count", 0),
-#                     "availability": product_info.get("availability", "In Stock"),
-#                     "specifications": product_info.get("specifications", {}),
-#                     "similarity_score": result["score"],
-#                     "relevance_score": await self._calculate_relevance_score(
-#                         product_info, user_id
-#                     )
-#                 }
-                
-#                 products.append(product)
-            
-#             # Sort by relevance score
-#             products.sort(key=lambda x: x["relevance_score"], reverse=True)
-            
-#             return products
-            
-#         except Exception as e:
-#             logger.error(f"Failed to process search results: {e}")
-#             raise
-    
-#     async def _calculate_relevance_score(
-#         self,
-#         product_info: Dict[str, Any],
-#         user_id: Optional[str] = None
-#     ) -> float:
-#         """Calculate relevance score for product"""
-#         try:
-#             # Base score from similarity
-#             base_score = 0.5
-            
-#             # Boost for high ratings
-#             rating = product_info.get("rating", 0)
-#             if rating >= 4.5:
-#                 base_score += 0.2
-#             elif rating >= 4.0:
-#                 base_score += 0.1
-            
-#             # Boost for popular products (high review count)
-#             reviews_count = product_info.get("reviews_count", 0)
-#             if reviews_count >= 1000:
-#                 base_score += 0.1
-#             elif reviews_count >= 100:
-#                 base_score += 0.05
-            
-#             # TODO: Add user personalization scoring
-#             if user_id:
-#                 # This would integrate with personalization model
-#                 pass
-            
-#             return min(base_score, 1.0)
-            
-#         except Exception as e:
-#             logger.error(f"Failed to calculate relevance score: {e}")
-#             return 0.5
-    
-#     async def generate_product_summary(
-#         self,
-#         products: List[Dict[str, Any]],
-#         query: str
-#     ) -> str:
-#         """Generate a summary of search results"""
-#         try:
-#             if not products:
-#                 return "Không tìm thấy sản phẩm phù hợp với yêu cầu của bạn."
-            
-#             # Create product summary
-#             summary_parts = []
-            
-#             # Add query context
-#             summary_parts.append(f"Dựa trên yêu cầu '{query}', tôi tìm thấy {len(products)} sản phẩm phù hợp:")
-            
-#             # Add top products
-#             for i, product in enumerate(products[:3], 1):
-#                 name = product["name"]
-#                 brand = product["brand"]
-#                 price = product["price"]
-#                 rating = product["rating"]
-                
-#                 summary_parts.append(
-#                     f"{i}. {name} ({brand}) - {price:,} VNĐ - ⭐ {rating}/5"
-#                 )
-            
-#             if len(products) > 3:
-#                 summary_parts.append(f"... và {len(products) - 3} sản phẩm khác")
-            
-#             return "\n".join(summary_parts)
-            
-#         except Exception as e:
-#             logger.error(f"Failed to generate product summary: {e}")
-#             return "Có lỗi khi tạo tóm tắt sản phẩm."
-    
-#     async def upsert_product(
-#         self,
-#         product_id: str,
-#         product_data: Dict[str, Any],
-#         namespace: str = "default"
-#     ) -> bool:
-#         """
-#         Upsert product to vector database
-        
-#         Args:
-#             product_id: Unique product identifier
-#             product_data: Product information
-#             namespace: Pinecone namespace
-        
-#         Returns:
-#             Success status
-#         """
-#         try:
-#             logger.info(f"Upserting product: {product_id}")
-            
-#             # Create product text for embedding
-#             product_text = self._create_product_text(product_data)
-            
-#             # Generate embedding
-#             embedding = await self._generate_embedding(product_text)
-            
-#             # Prepare vector data
-#             vector_data = {
-#                 "id": product_id,
-#                 "values": embedding,
-#                 "metadata": {
-#                     "name": product_data.get("name", ""),
-#                     "brand": product_data.get("brand", ""),
-#                     "price": product_data.get("price", 0),
-#                     "description": product_data.get("description", ""),
-#                     "category": product_data.get("category", ""),
-#                     "image_url": product_data.get("image_url", ""),
-#                     "rating": product_data.get("rating", 0),
-#                     "reviews_count": product_data.get("reviews_count", 0),
-#                     "availability": product_data.get("availability", "In Stock"),
-#                     "specifications": product_data.get("specifications", {}),
-#                     "product_text": product_text
-#                 }
-#             }
-            
-#             # Upsert to Pinecone
-#             await self.pinecone_client.upsert_vectors(
-#                 vectors=[vector_data],
-#                 namespace=namespace
-#             )
-            
-#             logger.info(f"Successfully upserted product: {product_id}")
-#             return True
-            
-#         except Exception as e:
-#             logger.error(f"Failed to upsert product: {e}")
-#             return False
-    
-#     def _create_product_text(self, product_data: Dict[str, Any]) -> str:
-#         """Create text representation of product for embedding"""
-#         try:
-#             text_parts = []
-            
-#             # Add basic info
-#             if product_data.get("name"):
-#                 text_parts.append(product_data["name"])
-            
-#             if product_data.get("brand"):
-#                 text_parts.append(f"thương hiệu {product_data['brand']}")
-            
-#             if product_data.get("description"):
-#                 text_parts.append(product_data["description"])
-            
-#             # Add specifications
-#             specs = product_data.get("specifications", {})
-#             if specs:
-#                 spec_text = []
-#                 for key, value in specs.items():
-#                     spec_text.append(f"{key}: {value}")
-#                 text_parts.append(" ".join(spec_text))
-            
-#             # Add category
-#             if product_data.get("category"):
-#                 text_parts.append(f"danh mục {product_data['category']}")
-            
-#             return " ".join(text_parts)
-            
-#         except Exception as e:
-#             logger.error(f"Failed to create product text: {e}")
-#             return ""
-    
-#     async def cleanup(self):
-#         """Cleanup resources"""
-#         try:
-#             logger.info("Cleaning up RAG model...")
-#             # No explicit cleanup needed for sentence transformer
-#             logger.info("RAG model cleanup completed")
-            
-#         except Exception as e:
-#             logger.error(f"Error during RAG model cleanup: {e}")
 """
 RAG Model - Retrieval-Augmented Generation for product search
 Handles vector search and response generation
 """
 
 import logging
+import re
 from typing import List, Dict, Any, Optional, Tuple
+from urllib.parse import quote
+
+from config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -368,6 +29,10 @@ class RAGModel:
         self.model_loader = model_loader
         self.dimension = 1024   
         self.embedding_model_name = "llama-text-embed-v2"
+        settings = get_settings()
+        product_service_url = getattr(settings, "product_service_url", "http://localhost:8181/api/products")
+        self.product_service_url = f"{product_service_url}".rstrip("/")
+        self.rag_live_only = bool(getattr(settings, "rag_live_only", True))
 
     async def initialize(self):
         """Initialize RAG model components"""
@@ -401,7 +66,8 @@ class RAGModel:
         price_range: Optional[Tuple[float, float]] = None,
         brand: Optional[str] = None,
         category: Optional[str] = None,
-        specs: Optional[Dict[str, Any]] = None
+        specs: Optional[Dict[str, Any]] = None,
+        live_only: Optional[bool] = None,
     ) -> List[Dict[str, Any]]:
         """Search for products using RAG"""
         try:
@@ -415,6 +81,7 @@ class RAGModel:
             final_brand = brand or extracted_metadata.get("brand")
             final_category = category or extracted_metadata.get("category")
             final_specs = specs or extracted_metadata.get("specs", {})
+            effective_live_only = self.rag_live_only if live_only is None else bool(live_only)
 
             # Generate query embedding
             query_embedding = await self._generate_embedding(query)
@@ -425,11 +92,17 @@ class RAGModel:
                 top_k=top_k,
                 price_range=final_price_range,
                 brand=final_brand,
-                category=final_category
+                category=final_category,
+                only_live_products=effective_live_only,
             )
 
             # Process and format results
             products = await self._process_search_results(search_results, user_id)
+
+            # Enforce brand match with case-insensitive local filtering.
+            # This protects against inconsistent brand metadata values in vector store.
+            if final_brand:
+                products = self._filter_by_brand(products, final_brand)
             
             # Apply additional filtering based on extracted specs
             if final_specs:
@@ -442,10 +115,16 @@ class RAGModel:
                     query_vector=query_embedding,
                     top_k=top_k * 2,  # Get more results
                     price_range=None,  # Remove price filter
-                    brand=None,  # Remove brand filter
-                    category=None
+                    # Do not apply exact brand filter here; metadata values can vary
+                    # (e.g., "Samsung Electronics"). We apply tolerant local brand
+                    # filtering right after retrieval to avoid unrelated products.
+                    brand=None,
+                    category=None,
+                    only_live_products=effective_live_only,
                 )
                 products = await self._process_search_results(relaxed_results, user_id)
+                if final_brand:
+                    products = self._filter_by_brand(products, final_brand)
                 # Apply only essential filters
                 if final_specs and any(spec in final_specs for spec in ['pin', 'camera', 'chơi game']):
                     products = await self._filter_by_specs(products, final_specs)
@@ -467,6 +146,8 @@ class RAGModel:
             products = []
             for result in search_results:
                 product_info = result.get("product_info", {})
+                backend_id = product_info.get("backend_id") or result.get("id")
+                product_url, specs_url = self._build_product_urls(backend_id, product_info)
 
                 # ✅ Fix: Parse specifications string back to dict if needed
                 specs = product_info.get("specifications", {})
@@ -483,7 +164,9 @@ class RAGModel:
                     specs = parsed_specs
 
                 product = {
-                    "id": result["id"],
+                    "id": backend_id,
+                    "vector_id": result["id"],
+                    "backend_id": backend_id,
                     "name": product_info.get("name", "Unknown Product"),
                     "brand": product_info.get("brand", "Unknown Brand"),
                     "price": float(product_info.get("price", 0)),
@@ -493,7 +176,10 @@ class RAGModel:
                     "rating": float(product_info.get("rating", 0)),
                     "reviews_count": int(product_info.get("reviews_count", 0)),
                     "availability": product_info.get("availability", "In Stock"),
+                    "stock": self._availability_to_stock(product_info.get("availability")),
                     "specifications": specs,
+                    "product_url": product_url,
+                    "specs_url": specs_url,
                     "similarity_score": result["score"],
                     "relevance_score": await self._calculate_relevance_score(
                         product_info, user_id
@@ -568,11 +254,13 @@ class RAGModel:
 
             product_text = self._create_product_text(product_data)
             embedding = await self._generate_embedding(product_text)
+            product_url, specs_url = self._build_product_urls(product_id, product_data)
 
             vector_data = {
                 "id": product_id,
                 "values": embedding,
                 "metadata": {
+                    "backend_id": product_data.get("backend_id") or product_id,
                     "name": product_data.get("name", ""),
                     "brand": product_data.get("brand", ""),
                     "price": product_data.get("price", 0),
@@ -582,10 +270,13 @@ class RAGModel:
                     "rating": product_data.get("rating", 0),
                     "reviews_count": product_data.get("reviews_count", 0),
                     "availability": product_data.get("availability", "In Stock"),
+                    "is_live": bool(product_data.get("is_live", True)),
                     # ✅ Fix: serialize specifications dict
                     "specifications": "; ".join(
                         [f"{k}: {v}" for k, v in product_data.get("specifications", {}).items()]
                     ),
+                    "product_url": product_data.get("product_url") or product_url,
+                    "specs_url": product_data.get("specs_url") or specs_url,
                     "product_text": product_text,
                 },
             }
@@ -616,6 +307,30 @@ class RAGModel:
         except Exception:
             return ""
 
+    def _build_product_urls(self, product_id: Optional[str], product_info: Dict[str, Any]) -> Tuple[str, str]:
+        """Build product detail/specification URLs for frontend navigation."""
+        if not product_id:
+            return "", ""
+
+        existing_product_url = (
+            product_info.get("product_url")
+            or product_info.get("detail_url")
+            or product_info.get("url")
+        )
+        existing_specs_url = (
+            product_info.get("specs_url")
+            or product_info.get("specifications_url")
+        )
+
+        if not existing_product_url:
+            encoded_product_id = quote(str(product_id), safe="")
+            existing_product_url = f"{self.product_service_url}/{encoded_product_id}"
+
+        if not existing_specs_url:
+            existing_specs_url = f"{existing_product_url}#specifications"
+
+        return existing_product_url, existing_specs_url
+
     async def _extract_metadata_from_query(self, query: str) -> Dict[str, Any]:
         """Extract metadata from user query"""
         try:
@@ -629,8 +344,6 @@ class RAGModel:
             query_lower = query.lower()
             
             # Extract price range
-            import re
-            
             # Price patterns - updated to better handle Vietnamese
             price_patterns = [
                 (r'từ\s+(\d+)\s*(?:đến|tới)\s+(\d+)\s*tr(?:iệu)?', 'range'),  # "từ 10 đến 20 triệu"
@@ -666,15 +379,22 @@ class RAGModel:
                     logger.info(f"Extracted price range from query: {metadata['price_range']}")
                     break
             
-            # Extract brand
+            # Extract brand (with basic synonym mapping, e.g. "iphone" -> "Apple")
             brands = [
                 'iphone', 'apple', 'samsung', 'xiaomi', 'oppo', 'vivo', 
                 'realme', 'oneplus', 'huawei', 'nokia', 'motorola', 'lg', 'sony'
             ]
+
+            # Map user-mentioned brand keywords to normalized brand values used in dataset
+            brand_synonyms = {
+                # iPhone is a product line of Apple, dataset brand is usually "Apple"
+                'iphone': 'Apple',
+            }
             
             for brand in brands:
                 if brand in query_lower:
-                    metadata["brand"] = brand.title()
+                    normalized_brand = brand_synonyms.get(brand, brand.title())
+                    metadata["brand"] = normalized_brand
                     logger.info(f"Extracted brand from query: {metadata['brand']}")
                     break
             
@@ -768,6 +488,153 @@ class RAGModel:
         except Exception as e:
             logger.error(f"Failed to filter by specs: {e}")
             return products
+
+    def _filter_by_brand(self, products: List[Dict[str, Any]], brand: str) -> List[Dict[str, Any]]:
+        """Apply tolerant brand filtering on already-retrieved products."""
+        if not products or not brand:
+            return products
+
+        normalized_brand = self._normalize_brand_keyword(brand)
+        filtered: List[Dict[str, Any]] = []
+        for product in products:
+            product_brand = str(product.get("brand", "")).strip()
+            normalized_product_brand = self._normalize_brand_keyword(product_brand)
+
+            # Match exact normalized brand and allow common variant containment
+            # (e.g., "Samsung Electronics" for requested "Samsung").
+            if (
+                normalized_product_brand == normalized_brand
+                or normalized_brand in normalized_product_brand
+                or normalized_product_brand in normalized_brand
+            ):
+                filtered.append(product)
+
+        return filtered
+
+    def _normalize_brand_keyword(self, value: str) -> str:
+        """Normalize brand text for robust matching."""
+        normalized = (value or "").strip().lower()
+
+        # Normalize common aliases to a single canonical token.
+        if "iphone" in normalized or normalized == "apple":
+            return "apple"
+
+        return normalized
+
+    def _availability_to_stock(self, availability: Optional[str]) -> int:
+        """Map availability text to estimated stock quantity."""
+        if not availability:
+            return 0
+        availability_lower = str(availability).strip().lower()
+        if "in stock" in availability_lower or "còn hàng" in availability_lower:
+            return 10
+        if "limited" in availability_lower or "sắp hết" in availability_lower:
+            return 3
+        if "out of stock" in availability_lower or "hết hàng" in availability_lower:
+            return 0
+        return 0
+
+    def _extract_comparison_targets(self, query: str) -> List[str]:
+        """Extract up to 2 product target phrases from a comparison query."""
+        if not (query or "").strip():
+            return []
+
+        normalized_query = re.sub(r"\s+", " ", query.strip())
+        split_pattern = r"\s+(?:và|vs\.?|so với|hay)\s+"
+        parts = re.split(split_pattern, normalized_query, flags=re.IGNORECASE)
+
+        targets: List[str] = []
+        for part in parts:
+            cleaned = re.sub(
+                r"^(so\s*sánh|so\s*sanh|compare|đối\s*chiếu)\s+",
+                "",
+                part.strip(),
+                flags=re.IGNORECASE,
+            )
+            cleaned = re.sub(r"(nào\s*tốt\s*hơn\??|với\s*nhau\??)$", "", cleaned, flags=re.IGNORECASE).strip(" ?.,")
+            if cleaned and len(cleaned) >= 3:
+                targets.append(cleaned)
+
+        # De-duplicate while preserving order
+        unique_targets: List[str] = []
+        seen = set()
+        for target in targets:
+            key = target.lower()
+            if key not in seen:
+                seen.add(key)
+                unique_targets.append(target)
+
+        return unique_targets[:2]
+
+    async def resolve_products_for_comparison(
+        self,
+        query: str,
+        user_id: Optional[str] = None,
+        top_k: int = 8,
+    ) -> List[Dict[str, Any]]:
+        """Resolve 2 best products for comparison from user query."""
+        targets = self._extract_comparison_targets(query)
+        selected_products: List[Dict[str, Any]] = []
+        selected_ids = set()
+
+        for target in targets:
+            candidate_products = await self.search_products(
+                query=target,
+                user_id=user_id,
+                top_k=3,
+            )
+            for product in candidate_products:
+                product_id = product.get("id")
+                if product_id and product_id not in selected_ids:
+                    selected_ids.add(product_id)
+                    selected_products.append(product)
+                    break
+
+        if len(selected_products) < 2:
+            fallback_products = await self.search_products(
+                query=query,
+                user_id=user_id,
+                top_k=max(top_k, 6),
+            )
+            for product in fallback_products:
+                product_id = product.get("id")
+                if product_id and product_id not in selected_ids:
+                    selected_ids.add(product_id)
+                    selected_products.append(product)
+                if len(selected_products) >= 2:
+                    break
+
+        return selected_products[:2]
+
+    async def get_spec_clarification_question(self, query: str) -> Optional[str]:
+        """Return a follow-up question when query asks specs but is still ambiguous."""
+        if not (query or "").strip():
+            return None
+
+        query_lower = query.lower()
+        metadata = await self._extract_metadata_from_query(query)
+        extracted_specs = metadata.get("specs", {}) if metadata else {}
+
+        has_generic_spec_intent = any(
+            token in query_lower
+            for token in ["thông số", "cấu hình", "spec", "chi tiết", "mạnh", "tốt"]
+        )
+
+        if has_generic_spec_intent and not extracted_specs:
+            return (
+                "Bạn muốn mình ưu tiên thông số nào để lọc chính xác hơn: "
+                "RAM, bộ nhớ (ROM), pin, camera hay màn hình? "
+                "Nếu được, bạn cho mình luôn mức cụ thể (ví dụ RAM 8GB, pin 5000mAh)."
+            )
+
+        if "ram" in query_lower and "ram" not in extracted_specs:
+            return "Bạn muốn RAM tối thiểu bao nhiêu GB (ví dụ 8GB hoặc 12GB)?"
+        if any(k in query_lower for k in ["rom", "bộ nhớ", "storage"]) and "rom" not in extracted_specs:
+            return "Bạn muốn bộ nhớ trong tối thiểu bao nhiêu GB (ví dụ 128GB hoặc 256GB)?"
+        if "màn hình" in query_lower and "màn hình" not in extracted_specs:
+            return "Bạn muốn màn hình khoảng bao nhiêu inch?"
+
+        return None
 
     async def cleanup(self):
         """Cleanup resources"""

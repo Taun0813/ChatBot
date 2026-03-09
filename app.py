@@ -3,7 +3,7 @@ AI Agent FastAPI Application
 Entry point for the AI Agent system with /chat endpoint
 """
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -67,6 +67,7 @@ async def lifespan(app: FastAPI):
                 "payment_service_url": settings.payment_service_url,
                 "warranty_service_url": settings.warranty_service_url,
                 "product_service_url": settings.product_service_url,
+                "jwt_token": settings.jwt_token,
                 "order_service_api_key": settings.order_service_api_key,
                 "payment_service_api_key": settings.payment_service_api_key,
                 "warranty_service_api_key": settings.warranty_service_api_key,
@@ -252,6 +253,7 @@ async def health_check():
 @app.post("/ask", response_model=ChatResponse, tags=["Chat"])
 async def ask(
     request: ChatRequest,
+    http_request: Request,
     router = Depends(get_router)
 ):
     """
@@ -276,12 +278,18 @@ async def ask(
     try:
         logger.info(f"Received ask request: {request.message[:100]}...")
         
+        # Build context and propagate auth token from incoming Authorization header
+        request_context = dict(request.context or {})
+        auth_header = http_request.headers.get("authorization")
+        if auth_header:
+            request_context.setdefault("jwt_token", auth_header)
+
         # Process the request through the Agno router
         response = await router.process_request(
             message=request.message,
             user_id=request.user_id,
             session_id=request.session_id,
-            context=request.context,
+            context=request_context,
             intent=request.intent
         )
         

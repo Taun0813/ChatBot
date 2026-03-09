@@ -26,6 +26,9 @@ class DataInitializer:
         self.pinecone_client = None
         self.rag_model = None
         self.model_loader = None
+        self.require_backend_id_for_indexing = bool(
+            getattr(self.settings, "require_backend_id_for_indexing", True)
+        )
         
     async def initialize(self):
         """Initialize all components"""
@@ -198,16 +201,21 @@ class DataInitializer:
             if isinstance(features, str):
                 features = [f.strip() for f in features.split(",") if f.strip()]
 
-            # --- PRODUCT ID (KHÔNG cho Unknown) ---
-            raw_id = s(raw_product.get("id") or raw_product.get("product_id"))
-            product_id = raw_id or f"{brand}_{name}"
-            product_id = re.sub(r"[^a-zA-Z0-9_-]", "", product_id.lower().replace(" ", "_"))
+            # --- PRODUCT ID ---
+            # Prefer backend_id so Pinecone IDs align with backend DB keys.
+            backend_id = self._extract_backend_id(raw_product)
+            if backend_id:
+                product_id = backend_id
+            else:
+                product_id = f"{brand}_{name}"
+                product_id = re.sub(r"[^a-zA-Z0-9_-]", "", product_id.lower().replace(" ", "_"))
 
             if not description:
                 description = f"{name} - {brand} - {category}. Giá {price:,.0f}."
 
             return {
                 "id": product_id,
+                "backend_id": backend_id or product_id,
                 "name": name,
                 "brand": brand,
                 "price": price,
@@ -216,6 +224,10 @@ class DataInitializer:
                 "rating": float(raw_product.get("rating", 4.5)),
                 "reviews_count": int(raw_product.get("reviews_count", 0)),
                 "availability": str(raw_product.get("availability", "In Stock")),
+                "is_live": self._parse_live_status(
+                    raw_product.get("is_live", raw_product.get("in_website", True)),
+                    default=True,
+                ),
                 "specifications": specs,
                 "image_url": s(raw_product.get("image_url") or raw_product.get("image")),
                 "features": features,
@@ -237,6 +249,37 @@ class DataInitializer:
             if val is not None and str(val).strip():
                 return str(val).strip()
         return default
+
+    def _parse_live_status(self, raw_value: Any, default: bool = True) -> bool:
+        """Parse live/in_website flags from mixed input formats."""
+        if raw_value is None:
+            return default
+        if isinstance(raw_value, bool):
+            return raw_value
+        normalized = str(raw_value).strip().lower()
+        if normalized in {"1", "true", "yes", "y", "live", "active", "in_website"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "inactive", "out", "not_live"}:
+            return False
+        return default
+
+    def _extract_backend_id(self, raw_product: Dict[str, Any]) -> str:
+        """Extract backend product ID from common source keys."""
+        candidates = (
+            raw_product.get("backend_id"),
+            raw_product.get("id"),
+            raw_product.get("ID"),
+            raw_product.get("product_id"),
+            raw_product.get("productId"),
+            raw_product.get("db_id"),
+        )
+        for value in candidates:
+            if value is None:
+                continue
+            value_str = str(value).strip()
+            if value_str:
+                return value_str
+        return ""
 
     def transform_product_data(self, raw_product: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Transform raw product data from CSV to our format"""
@@ -299,8 +342,12 @@ class DataInitializer:
                     "Row has Unknown brand/model - kiểm tra tên cột CSV. Keys: %s",
                     list(raw_product.keys())[:5]
                 )
-            product_id = f"{brand.lower()}_{model.lower().replace(' ', '_').replace('-', '_')}"
-            product_id = re.sub(r'[^a-zA-Z0-9_]', '', product_id)
+            backend_id = self._extract_backend_id(raw_product)
+            if backend_id:
+                product_id = backend_id
+            else:
+                product_id = f"{brand.lower()}_{model.lower().replace(' ', '_').replace('-', '_')}"
+                product_id = re.sub(r'[^a-zA-Z0-9_]', '', product_id)
             
             # Infer OS from brand
             os_type = "iOS" if brand.lower() == "apple" else "Android"
@@ -346,6 +393,7 @@ class DataInitializer:
             # Create product data
             product_data = {
                 "id": product_id,
+                "backend_id": backend_id or product_id,
                 "name": model,
                 "brand": brand,
                 "price": price_vnd,
@@ -354,6 +402,10 @@ class DataInitializer:
                 "rating": 4.5, # Default since no rating in CSV
                 "reviews_count": 0,
                 "availability": "In Stock",
+                "is_live": self._parse_live_status(
+                    raw_product.get("is_live", raw_product.get("in_website", True)),
+                    default=True,
+                ),
                 "specifications": specifications,
                 "image_url": "",
                 "features": self._extract_features(specifications, price_vnd)
@@ -447,6 +499,18 @@ class DataInitializer:
                         if not transformed_product:
                             failed_count += 1
                             continue
+
+                        backend_id = str(transformed_product.get("backend_id") or "").strip()
+                        if self.require_backend_id_for_indexing and not backend_id:
+                            logger.info(
+                                "Skipping product without backend_id: %s",
+                                transformed_product.get("name", "Unknown"),
+                            )
+                            failed_count += 1
+                            continue
+
+                        if backend_id and str(transformed_product.get("id", "")).strip() != backend_id:
+                            transformed_product["id"] = backend_id
                         
                         # Upsert to Pinecone
                         success = await self.rag_model.upsert_product(

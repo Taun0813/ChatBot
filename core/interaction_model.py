@@ -46,10 +46,13 @@ class InteractionModel:
             
             # Create system prompt
             system_prompt = self._create_system_prompt(user_id, context)
+            history_block = self._format_history_for_prompt(context)
             
             # Create conversation prompt
             conversation_prompt = f"""
 {system_prompt}
+
+{history_block}
 
 Người dùng: {message}
 
@@ -74,19 +77,11 @@ Trợ lý AI:"""
         query: str,
         search_results: List[Dict[str, Any]],
         user_id: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        max_products_in_prompt: int = 3,
     ) -> str:
         """
-        Generate response for product search results using advanced prompts
-        
-        Args:
-            query: Original search query
-            search_results: List of search results
-            user_id: User identifier
-            context: Additional context
-        
-        Returns:
-            Formatted search response
+        Generate response for product search - chỉ đưa tối đa max_products_in_prompt vào prompt để giảm token và latency.
         """
         try:
             logger.info(f"Generating search response for query: {query}")
@@ -94,21 +89,26 @@ Trợ lý AI:"""
             if not search_results:
                 return PromptTemplates.get_no_results_prompt(query)
             
-            # Create contextual prompt
+            # Chỉ đưa top N sản phẩm vào prompt để giảm thời gian LLM
+            products_for_prompt = search_results[:max_products_in_prompt]
             prompt = PromptTemplates.get_contextual_prompt(
                 query=query,
                 context=context or {},
-                products=search_results
+                products=products_for_prompt,
             )
             
-            # Generate response using LLM
+            # max_tokens vừa đủ để trả lời ngắn gọn, giảm latency
             response = await self.model_loader.generate_response(
                 prompt=prompt,
-                max_tokens=1024,
-                temperature=0.7
+                max_tokens=768,
+                temperature=0.5,
             )
-            
-            return response
+
+            # Chỉ trả về câu đầu tiên (thường là lời chào/xác nhận nhu cầu),
+            # phần list sản phẩm sẽ được UI hiển thị từ metadata.search_results.
+            text = (response or "").strip()
+            first_line = text.split("\n", 1)[0].strip()
+            return first_line
             
         except Exception as e:
             logger.error(f"Failed to generate search response: {e}")
@@ -132,6 +132,26 @@ Hãy luôn:
 - Luôn sẵn sàng hỗ trợ về đơn hàng, bảo hành và thanh toán
 
 Nếu không chắc chắn về thông tin, hãy nói rõ và đề xuất cách tìm hiểu thêm."""
+
+    def _format_history_for_prompt(self, context: Optional[Dict[str, Any]]) -> str:
+        """Format short recent conversation history to improve multi-turn memory."""
+        context = context or {}
+        history = context.get("conversation_history") or []
+        if not isinstance(history, list) or not history:
+            return ""
+
+        lines = ["Ngữ cảnh hội thoại gần đây:"]
+        for turn in history[-4:]:
+            if not isinstance(turn, dict):
+                continue
+            user_text = str(turn.get("user", "")).strip()
+            assistant_text = str(turn.get("assistant", "")).strip()
+            if user_text:
+                lines.append(f"- Người dùng: {user_text}")
+            if assistant_text:
+                lines.append(f"- Trợ lý: {assistant_text}")
+
+        return "\n".join(lines)
     
     def _create_search_prompt(
         self, 
@@ -140,8 +160,8 @@ Nếu không chắc chắn về thông tin, hãy nói rõ và đề xuất cách
     ) -> str:
         """Create prompt for search response generation"""
         
-        # Format search results
-        products_text = self._format_search_results(search_results)
+        # Format search results (kèm spec liên quan query: pin, camera, ram...)
+        products_text = self._format_search_results(search_results, query=query)
         
         return f"""Bạn là trợ lý bán hàng chuyên nghiệp. Dựa trên yêu cầu tìm kiếm và kết quả tìm được, hãy tạo một phản hồi tự nhiên và hữu ích.
 
@@ -159,37 +179,15 @@ Hãy tạo một phản hồi:
 
 Trả lời bằng tiếng Việt, tự nhiên và thân thiện."""
     
-    def _format_search_results(self, search_results: List[Dict[str, Any]]) -> str:
-        """Format search results for prompt"""
-        formatted_results = []
-        
-        for i, product in enumerate(search_results[:5], 1):
-            name = product.get("name", "Unknown")
-            brand = product.get("brand", "Unknown")
-            price = product.get("price", 0)
-            rating = product.get("rating", 0)
-            description = product.get("description", "")
-            specs = product.get("specifications", {})
-            
-            # Format specifications
-            specs_text = ""
-            if specs:
-                spec_items = []
-                for key, value in specs.items():
-                    spec_items.append(f"{key}: {value}")
-                specs_text = f" | {', '.join(spec_items)}"
-            
-            formatted_result = f"""
-{i}. {name} ({brand})
-   - Giá: {price:,} VNĐ
-   - Đánh giá: ⭐ {rating}/5
-   - Mô tả: {description}
-   - Thông số: {specs_text}
-   - Điểm phù hợp: {product.get('similarity_score', 0):.2f}
-"""
-            formatted_results.append(formatted_result)
-        
-        return "\n".join(formatted_results)
+    def _format_search_results(
+        self,
+        search_results: List[Dict[str, Any]],
+        query: Optional[str] = None,
+    ) -> str:
+        """Format search results - nếu có query thì thêm spec liên quan (pin, camera...) để so sánh."""
+        return PromptTemplates._format_products(
+            search_results[:3], max_items=3, query=query
+        )
     
     def _generate_no_results_response(self, query: str) -> str:
         """Generate response when no results found"""
@@ -287,26 +285,25 @@ Bạn có muốn tôi gợi ý một số sản phẩm phổ biến không?"""
         query: str,
         search_results: List[Dict[str, Any]]
     ) -> str:
-        """Generate fallback response when model fails"""
+        """Template response - giá VNĐ và kèm spec liên quan (pin, camera...) để user so sánh."""
         if not search_results:
             return PromptTemplates.get_no_results_prompt(query)
-        
-        # Simple text-based response
+        from core.prompts import get_spec_keys_for_query, format_product_line_with_specs
+        spec_keys = get_spec_keys_for_query(query)
         response_parts = [f"Dựa trên yêu cầu '{query}', tôi tìm thấy {len(search_results)} sản phẩm phù hợp:"]
-        
-        for i, product in enumerate(search_results[:3], 1):
-            name = product.get("name", "Unknown")
-            brand = product.get("brand", "Unknown")
-            price = product.get("price", 0)
-            rating = product.get("rating", 0)
-            
-            response_parts.append(
-                f"{i}. {name} ({brand}) - {price:,} VNĐ - ⭐ {rating}/5"
-            )
-        
-        if len(search_results) > 3:
-            response_parts.append(f"... và {len(search_results) - 3} sản phẩm khác")
-        
-        response_parts.append("\nBạn có muốn tôi cung cấp thêm thông tin chi tiết về sản phẩm nào không?")
-        
+        for i, product in enumerate(search_results[:5], 1):
+            price_vnd = PromptTemplates._price_for_display(product.get("price", 0))
+            rating = float(product.get("rating", 0))
+            if spec_keys:
+                line = format_product_line_with_specs(
+                    product, spec_keys, price_vnd, rating, index=i
+                )
+            else:
+                name = product.get("name", "Unknown")
+                brand = product.get("brand", "Unknown")
+                line = f"{i}. {name} ({brand}) - {price_vnd:,} VNĐ - ⭐ {rating}/5"
+            response_parts.append(line)
+        if len(search_results) > 5:
+            response_parts.append(f"... và {len(search_results) - 5} sản phẩm khác.")
+        response_parts.append("Bạn có muốn tôi cung cấp thêm thông tin chi tiết về sản phẩm nào không?")
         return "\n".join(response_parts)

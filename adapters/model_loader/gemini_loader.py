@@ -7,6 +7,7 @@ import asyncio
 import logging
 from typing import Optional
 import google.generativeai as genai
+from google.api_core import exceptions as google_exceptions
 from .base_loader import BaseModelLoader
 
 logger = logging.getLogger(__name__)
@@ -77,10 +78,27 @@ class GeminiLoader(BaseModelLoader):
                 generation_config=generation_config
             )
             
-            return response.text
+            # Gemini có thể trả response bị chặn (safety) hoặc không có text
+            if not response or not response.candidates:
+                logger.warning("Gemini returned empty or blocked response (no candidates)")
+                return "Xin lỗi, tôi không thể tạo phản hồi cho nội dung này. Bạn thử hỏi khác nhé."
+            candidate = response.candidates[0]
+            if not candidate.content or not candidate.content.parts:
+                reason = getattr(candidate, "finish_reason", None) or "unknown"
+                logger.warning(f"Gemini blocked or empty content: finish_reason={reason}")
+                return "Xin lỗi, tôi không thể tạo phản hồi cho nội dung này. Bạn thử hỏi khác nhé."
+            text = response.text
+            if not (text and text.strip()):
+                return "Xin lỗi, tôi không thể tạo phản hồi cho nội dung này. Bạn thử hỏi khác nhé."
+            return text
             
+        except google_exceptions.ResourceExhausted as e:
+            logger.warning("Gemini quota exceeded (429): %s", e)
+            return "Hiện đã hết lượt gọi API (quota) cho hôm nay. Bạn vui lòng thử lại sau hoặc đợi vài phút."
         except Exception as e:
-            logger.error(f"Failed to generate response with Gemini: {e}")
+            logger.exception("Failed to generate response with Gemini: %s", e)
+            # In ra console để dễ debug khi test Postman
+            print(f"[Gemini ERROR] {type(e).__name__}: {e}", flush=True)
             return "Xin lỗi, tôi gặp lỗi khi tạo phản hồi. Vui lòng thử lại sau."
     
     async def cleanup(self) -> None:

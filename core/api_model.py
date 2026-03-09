@@ -43,6 +43,9 @@ class APIModel:
         
         # Timeout settings
         self.timeout = self.config.get("api_timeout", 30)
+
+        # JWT token fallback (used when frontend does not pass token in context)
+        self.jwt_token = self.config.get("jwt_token")
         
         # When False: skip real API calls (no mock fallback)
         self.enable_api_calls = self.config.get("enable_api_calls", True)
@@ -74,18 +77,28 @@ class APIModel:
         endpoint: str,
         method: str = "GET",
         data: Optional[Dict[str, Any]] = None,
-        params: Optional[Dict[str, Any]] = None
+        params: Optional[Dict[str, Any]] = None,
+        context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Call Spring Boot service"""
         try:
             if not self.client:
-                raise ValueError("HTTP client not initialized")
+                logger.warning("HTTP client not initialized, auto-initializing API model client")
+                await self.initialize()
+                if not self.client:
+                    raise ValueError("HTTP client not initialized")
             
             url = f"{self.services[service_name]}/{endpoint.lstrip('/')}"
             headers = {"Content-Type": "application/json"}
+
+            token_from_context = self._extract_jwt_from_context(context)
+            auth_token = token_from_context or self.jwt_token
+
+            if auth_token:
+                headers["Authorization"] = f"Bearer {auth_token}"
             
-            # Add API key if available
-            if self.api_keys.get(service_name):
+            # Add API key only when Authorization is not set by JWT
+            if "Authorization" not in headers and self.api_keys.get(service_name):
                 headers["Authorization"] = f"Bearer {self.api_keys[service_name]}"
             
             # Make request
@@ -103,10 +116,32 @@ class APIModel:
             
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error calling {service_name}: {e.response.status_code}")
-            return {"error": f"Service error: {e.response.status_code}"}
+            return {
+                "error": f"Service error: {e.response.status_code}",
+                "status_code": e.response.status_code
+            }
         except Exception as e:
             logger.error(f"Error calling {service_name}: {e}")
             return {"error": str(e)}
+
+    def _extract_jwt_from_context(self, context: Optional[Dict[str, Any]]) -> Optional[str]:
+        """Extract JWT token from context payload from frontend."""
+        if not context or not isinstance(context, dict):
+            return None
+
+        token = (
+            context.get("jwt_token")
+            or context.get("access_token")
+            or context.get("token")
+            or context.get("authorization")
+        )
+
+        if isinstance(token, str) and token.strip():
+            token = token.strip()
+            if token.lower().startswith("bearer "):
+                return token[7:].strip()
+            return token
+        return None
     
     async def handle_order_request(
         self, 
@@ -140,10 +175,13 @@ class APIModel:
             order_info = await self._call_spring_boot_service(
                 service_name="order",
                 endpoint=f"/{order_id}",
-                method="GET"
+                method="GET",
+                context=context
             )
             if "error" in order_info:
                 logger.warning(f"Spring Boot service error: {order_info['error']}")
+                if order_info.get("status_code") == 401:
+                    return "Phiên đăng nhập không hợp lệ hoặc đã hết hạn khi tra cứu đơn hàng. Vui lòng đăng nhập lại và gửi kèm token cho API /ask."
                 return "Xin lỗi, hiện không thể tra cứu thông tin đơn hàng. Vui lòng thử lại sau."
 
             order_info = self._transform_order_response(order_info)
@@ -182,10 +220,13 @@ class APIModel:
             payment_info = await self._call_spring_boot_service(
                 service_name="payment",
                 endpoint=f"/order/{order_id}",
-                method="GET"
+                method="GET",
+                context=context
             )
             if "error" in payment_info:
                 logger.warning(f"Spring Boot payment error: {payment_info['error']}")
+                if payment_info.get("status_code") == 401:
+                    return "Phiên đăng nhập không hợp lệ hoặc đã hết hạn khi tra cứu thanh toán. Vui lòng đăng nhập lại và gửi kèm token cho API /ask."
                 return "Xin lỗi, hiện không thể tra cứu thông tin thanh toán. Vui lòng thử lại sau."
 
             payment_info = self._transform_payment_response(payment_info)
@@ -223,17 +264,21 @@ class APIModel:
                 warranty_info = await self._call_spring_boot_service(
                     service_name="warranty",
                     endpoint=f"/product/{product_id}",
-                    method="GET"
+                    method="GET",
+                    context=context
                 )
             else:
                 warranty_info = await self._call_spring_boot_service(
                     service_name="warranty",
                     endpoint=f"/order/{order_id}",
-                    method="GET"
+                    method="GET",
+                    context=context
                 )
 
             if "error" in warranty_info:
                 logger.warning(f"Spring Boot warranty error: {warranty_info['error']}")
+                if warranty_info.get("status_code") == 401:
+                    return "Phiên đăng nhập không hợp lệ hoặc đã hết hạn khi tra cứu bảo hành. Vui lòng đăng nhập lại và gửi kèm token cho API /ask."
                 return "Xin lỗi, hiện không thể tra cứu thông tin bảo hành. Vui lòng thử lại sau."
 
             warranty_info = self._transform_warranty_response(warranty_info)
@@ -249,12 +294,32 @@ class APIModel:
     
     def _transform_order_response(self, spring_boot_response: Dict[str, Any]) -> Dict[str, Any]:
         """Transform Spring Boot order response to our format"""
+        items = spring_boot_response.get("items", []) or []
+        normalized_items = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            normalized_items.append({
+                "id": item.get("id"),
+                "product_id": item.get("productId"),
+                "name": item.get("name") or item.get("productName") or "Unknown",
+                "quantity": item.get("quantity", 1),
+                "price": item.get("price") if item.get("price") is not None else item.get("unitPrice", 0),
+                "subtotal": item.get("subtotal", 0)
+            })
+
         return {
             "order_id": spring_boot_response.get("id"),
+            "order_number": spring_boot_response.get("orderNumber"),
+            "user_id": spring_boot_response.get("userId"),
             "status": spring_boot_response.get("status"),
             "total_amount": spring_boot_response.get("totalAmount", 0),
-            "products": spring_boot_response.get("items", []),
-            "shipping_address": spring_boot_response.get("shippingAddress", {}),
+            "payment_method": spring_boot_response.get("paymentMethod"),
+            "notes": spring_boot_response.get("notes"),
+            "products": normalized_items,
+            "shipping_address": spring_boot_response.get("shippingAddress"),
+            "shipping_city": spring_boot_response.get("shippingCity"),
+            "shipping_postal_code": spring_boot_response.get("shippingPostalCode"),
             "estimated_delivery": spring_boot_response.get("estimatedDelivery"),
             "created_at": spring_boot_response.get("createdAt"),
             "updated_at": spring_boot_response.get("updatedAt")
@@ -325,8 +390,8 @@ Bạn cần hỗ trợ gì thêm về thanh toán?"""
         product_id = warranty_info.get("product_id", "Unknown")
         status = warranty_info.get("status", "Unknown")
         start_date = warranty_info.get("start_date", "Unknown")
-        end_date = warranty_info.get("end_date", "Unknown")
         terms = warranty_info.get("terms", "Không có thông tin")
+        end_date = warranty_info.get("end_date", "Unknown")
         
         return f"""🛡️ **Thông tin bảo hành**
         
@@ -397,36 +462,92 @@ Bạn cần hỗ trợ gì cụ thể?"""
     def _format_order_response(self, order_info: Dict[str, Any]) -> str:
         """Format order information into response"""
         try:
+            def _fmt_money(value: Any) -> str:
+                try:
+                    return f"{float(value):,.0f} VNĐ"
+                except Exception:
+                    return f"{value} VNĐ"
+
+            def _fmt_time(value: Any) -> str:
+                if not value:
+                    return "Không có"
+                raw = str(value).strip()
+                normalized = raw.replace("T", " ").replace("Z", "")
+                return normalized
+
+            status_map = {
+                "PENDING": "Chờ xử lý",
+                "PROCESSING": "Đang xử lý",
+                "SHIPPED": "Đang giao",
+                "DELIVERED": "Đã giao",
+                "CANCELLED": "Đã hủy",
+                "FAILED": "Thất bại",
+                "PAID": "Đã thanh toán",
+                "UNPAID": "Chưa thanh toán",
+            }
+
             order_id = order_info.get("order_id", "Unknown")
-            status = order_info.get("status", "Unknown")
+            order_number = order_info.get("order_number")
+            raw_status = str(order_info.get("status", "Unknown"))
+            status = status_map.get(raw_status.upper(), raw_status)
             products = order_info.get("products", [])
             total_amount = order_info.get("total_amount", 0)
-            shipping_address = order_info.get("shipping_address", {})
-            estimated_delivery = order_info.get("estimated_delivery", "Unknown")
+            shipping_address = order_info.get("shipping_address")
+            shipping_city = order_info.get("shipping_city")
+            shipping_postal_code = order_info.get("shipping_postal_code")
+            payment_method = order_info.get("payment_method", "Unknown")
+            created_at = order_info.get("created_at", "Unknown")
+            updated_at = order_info.get("updated_at", "Unknown")
+
+            if isinstance(shipping_address, dict):
+                address_lines = [
+                    shipping_address.get("name"),
+                    shipping_address.get("address"),
+                    shipping_address.get("phone")
+                ]
+            else:
+                address_lines = [shipping_address, shipping_city, shipping_postal_code]
+            address_lines = [str(line) for line in address_lines if line]
             
             response_parts = [
-                f"📦 **Thông tin đơn hàng #{order_id}**",
-                f"",
+                "📦 **Chi tiết đơn hàng**",
+                f"**Mã đơn hàng**: {order_number or f'#{order_id}'}",
                 f"**Trạng thái**: {status}",
-                f"**Tổng tiền**: {total_amount:,} VNĐ",
-                f"",
-                f"**Sản phẩm**:"
+                f"**Tổng tiền**: {_fmt_money(total_amount)}",
+                f"**Phương thức thanh toán**: {payment_method}",
+                "",
+                "🛒 **Sản phẩm trong đơn**"
             ]
             
-            for product in products:
+            for idx, product in enumerate(products, 1):
                 name = product.get("name", "Unknown")
-                quantity = product.get("quantity", 1)
+                quantity = int(product.get("quantity", 1) or 1)
                 price = product.get("price", 0)
-                response_parts.append(f"- {name} x{quantity} - {price:,} VNĐ")
+                subtotal = product.get("subtotal")
+                line = f"{idx}. {name} ×{quantity} — {_fmt_money(price)}"
+                if subtotal is not None:
+                    line += f" (tạm tính: {_fmt_money(subtotal)})"
+                response_parts.append(line)
+
+            if not products:
+                response_parts.append("- Không có dữ liệu sản phẩm")
             
             response_parts.extend([
-                f"",
-                f"**Địa chỉ giao hàng**:",
-                f"- {shipping_address.get('name', 'Unknown')}",
-                f"- {shipping_address.get('address', 'Unknown')}",
-                f"- {shipping_address.get('phone', 'Unknown')}",
-                f"",
-                f"**Dự kiến giao hàng**: {estimated_delivery}"
+                "",
+                "📍 **Địa chỉ giao hàng**"
+            ])
+
+            if address_lines:
+                for line in address_lines:
+                    response_parts.append(f"- {line}")
+            else:
+                response_parts.append("- Chưa có thông tin địa chỉ")
+
+            response_parts.extend([
+                "",
+                "🕒 **Mốc thời gian**",
+                f"- Tạo lúc: {_fmt_time(created_at)}",
+                f"- Cập nhật: {_fmt_time(updated_at)}"
             ])
             
             return "\n".join(response_parts)
