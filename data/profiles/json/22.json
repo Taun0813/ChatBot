@@ -1,0 +1,22 @@
+{
+  "user_id": "22",
+  "created_at": "2026-03-06T21:29:41.660454",
+  "last_accessed": "2026-03-06T21:29:41.660454",
+  "preferences": {
+    "brands": {},
+    "categories": {},
+    "price_range": {},
+    "min_rating": 0,
+    "features": {}
+  },
+  "search_history": [],
+  "purchase_history": [],
+  "interaction_history": [],
+  "profile_data": {
+    "total_searches": 0,
+    "total_purchases": 0,
+    "favorite_brands": [],
+    "budget_range": null,
+    "preferred_features": []
+  }
+}

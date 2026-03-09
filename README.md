@@ -327,6 +327,10 @@ flowchart TB
    - **generic_json**: `transform_product_data_generic` — map name, brand, category, price, specifications, ...
 4. **ingest_products**: Chia batch (mặc định 50); mỗi sản phẩm → `rag_model.upsert_product` (tạo text → embed qua Pinecone Inference → upsert vector + metadata vào namespace "default").
 5. Có thể dùng `export_products_to_json` để chỉ transform và xuất JSON không đẩy Pinecone.
+6. **Live catalog filter (mới)**:
+  - Metadata Pinecone có thêm `is_live`.
+  - Search mặc định chỉ lấy `is_live=true` (config `RAG_LIVE_ONLY=true`).
+  - Khi ingest, có thể truyền cột `is_live` hoặc `in_website` từ dataset để kiểm soát sản phẩm nào được trả về cho người dùng.
 
 ---
 

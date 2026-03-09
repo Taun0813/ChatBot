@@ -32,6 +32,7 @@ class RAGModel:
         settings = get_settings()
         product_service_url = getattr(settings, "product_service_url", "http://localhost:8181/api/products")
         self.product_service_url = f"{product_service_url}".rstrip("/")
+        self.rag_live_only = bool(getattr(settings, "rag_live_only", True))
 
     async def initialize(self):
         """Initialize RAG model components"""
@@ -65,7 +66,8 @@ class RAGModel:
         price_range: Optional[Tuple[float, float]] = None,
         brand: Optional[str] = None,
         category: Optional[str] = None,
-        specs: Optional[Dict[str, Any]] = None
+        specs: Optional[Dict[str, Any]] = None,
+        live_only: Optional[bool] = None,
     ) -> List[Dict[str, Any]]:
         """Search for products using RAG"""
         try:
@@ -79,6 +81,7 @@ class RAGModel:
             final_brand = brand or extracted_metadata.get("brand")
             final_category = category or extracted_metadata.get("category")
             final_specs = specs or extracted_metadata.get("specs", {})
+            effective_live_only = self.rag_live_only if live_only is None else bool(live_only)
 
             # Generate query embedding
             query_embedding = await self._generate_embedding(query)
@@ -89,11 +92,17 @@ class RAGModel:
                 top_k=top_k,
                 price_range=final_price_range,
                 brand=final_brand,
-                category=final_category
+                category=final_category,
+                only_live_products=effective_live_only,
             )
 
             # Process and format results
             products = await self._process_search_results(search_results, user_id)
+
+            # Enforce brand match with case-insensitive local filtering.
+            # This protects against inconsistent brand metadata values in vector store.
+            if final_brand:
+                products = self._filter_by_brand(products, final_brand)
             
             # Apply additional filtering based on extracted specs
             if final_specs:
@@ -106,10 +115,16 @@ class RAGModel:
                     query_vector=query_embedding,
                     top_k=top_k * 2,  # Get more results
                     price_range=None,  # Remove price filter
-                    brand=None,  # Remove brand filter
-                    category=None
+                    # Do not apply exact brand filter here; metadata values can vary
+                    # (e.g., "Samsung Electronics"). We apply tolerant local brand
+                    # filtering right after retrieval to avoid unrelated products.
+                    brand=None,
+                    category=None,
+                    only_live_products=effective_live_only,
                 )
                 products = await self._process_search_results(relaxed_results, user_id)
+                if final_brand:
+                    products = self._filter_by_brand(products, final_brand)
                 # Apply only essential filters
                 if final_specs and any(spec in final_specs for spec in ['pin', 'camera', 'chơi game']):
                     products = await self._filter_by_specs(products, final_specs)
@@ -131,7 +146,8 @@ class RAGModel:
             products = []
             for result in search_results:
                 product_info = result.get("product_info", {})
-                product_url, specs_url = self._build_product_urls(result.get("id"), product_info)
+                backend_id = product_info.get("backend_id") or result.get("id")
+                product_url, specs_url = self._build_product_urls(backend_id, product_info)
 
                 # ✅ Fix: Parse specifications string back to dict if needed
                 specs = product_info.get("specifications", {})
@@ -148,7 +164,9 @@ class RAGModel:
                     specs = parsed_specs
 
                 product = {
-                    "id": result["id"],
+                    "id": backend_id,
+                    "vector_id": result["id"],
+                    "backend_id": backend_id,
                     "name": product_info.get("name", "Unknown Product"),
                     "brand": product_info.get("brand", "Unknown Brand"),
                     "price": float(product_info.get("price", 0)),
@@ -242,6 +260,7 @@ class RAGModel:
                 "id": product_id,
                 "values": embedding,
                 "metadata": {
+                    "backend_id": product_data.get("backend_id") or product_id,
                     "name": product_data.get("name", ""),
                     "brand": product_data.get("brand", ""),
                     "price": product_data.get("price", 0),
@@ -251,6 +270,7 @@ class RAGModel:
                     "rating": product_data.get("rating", 0),
                     "reviews_count": product_data.get("reviews_count", 0),
                     "availability": product_data.get("availability", "In Stock"),
+                    "is_live": bool(product_data.get("is_live", True)),
                     # ✅ Fix: serialize specifications dict
                     "specifications": "; ".join(
                         [f"{k}: {v}" for k, v in product_data.get("specifications", {}).items()]
@@ -468,6 +488,38 @@ class RAGModel:
         except Exception as e:
             logger.error(f"Failed to filter by specs: {e}")
             return products
+
+    def _filter_by_brand(self, products: List[Dict[str, Any]], brand: str) -> List[Dict[str, Any]]:
+        """Apply tolerant brand filtering on already-retrieved products."""
+        if not products or not brand:
+            return products
+
+        normalized_brand = self._normalize_brand_keyword(brand)
+        filtered: List[Dict[str, Any]] = []
+        for product in products:
+            product_brand = str(product.get("brand", "")).strip()
+            normalized_product_brand = self._normalize_brand_keyword(product_brand)
+
+            # Match exact normalized brand and allow common variant containment
+            # (e.g., "Samsung Electronics" for requested "Samsung").
+            if (
+                normalized_product_brand == normalized_brand
+                or normalized_brand in normalized_product_brand
+                or normalized_product_brand in normalized_brand
+            ):
+                filtered.append(product)
+
+        return filtered
+
+    def _normalize_brand_keyword(self, value: str) -> str:
+        """Normalize brand text for robust matching."""
+        normalized = (value or "").strip().lower()
+
+        # Normalize common aliases to a single canonical token.
+        if "iphone" in normalized or normalized == "apple":
+            return "apple"
+
+        return normalized
 
     def _availability_to_stock(self, availability: Optional[str]) -> int:
         """Map availability text to estimated stock quantity."""

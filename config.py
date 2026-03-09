@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     # Pinecone Configuration
     pinecone_environment: str = "us-west1-gcp-free"
-    pinecone_index_name: str = "product-search"
+    pinecone_index_name: str = "product-chabot"
     pinecone_dimension: int = 1024
     pinecone_metric: str = "cosine"
     pinecone_namespace: str = "default"
@@ -39,6 +39,8 @@ class Settings(BaseSettings):
 
     # Phase 1 - RAG & API (bật qua env khi đã có Pinecone/Spring Boot)
     rag_enabled: bool = Field(False, alias="RAG_ENABLED")
+    rag_live_only: bool = Field(True, alias="RAG_LIVE_ONLY")
+    require_backend_id_for_indexing: bool = Field(True, alias="REQUIRE_BACKEND_ID_FOR_INDEXING")
     enable_api_calls: bool = Field(False, alias="ENABLE_API_CALLS")
 
     # Model Configuration
