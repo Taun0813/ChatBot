@@ -65,14 +65,17 @@ class RLFeedbackSystem:
             await self._update_product_features(product_id, reward, context)
             
             self.logger.info(
-                f"Recorded feedback: user={user_id}, product={product_id}, "
-                f"action={action}, reward={reward}"
+                "Recorded feedback: user=%s, product=%s, action=%s, reward=%s",
+                user_id,
+                product_id,
+                action,
+                reward,
             )
             
             return True
             
         except Exception as e:
-            self.logger.error(f"Error recording feedback: {e}")
+            self.logger.error("Error recording feedback: %s", e)
             return False
     
     async def _update_user_model(
@@ -102,7 +105,7 @@ class RLFeedbackSystem:
             self._normalize_user_preferences(user_id)
             
         except Exception as e:
-            self.logger.error(f"Error updating user model: {e}")
+            self.logger.error("Error updating user model: %s", e)
     
     async def _update_product_features(
         self, 
@@ -127,7 +130,7 @@ class RLFeedbackSystem:
                 self.product_features[product_id][feature] += 0.05 * reward * value
             
         except Exception as e:
-            self.logger.error(f"Error updating product features: {e}")
+            self.logger.error("Error updating product features: %s", e)
     
     def _extract_features_from_context(self, context: Dict[str, Any]) -> Dict[str, float]:
         """Extract features from context"""
@@ -196,7 +199,7 @@ class RLFeedbackSystem:
             return max(-1.0, min(1.0, reward))  # Clamp to [-1, 1]
             
         except Exception as e:
-            self.logger.error(f"Error predicting reward: {e}")
+            self.logger.error("Error predicting reward: %s", e)
             return 0.0
     
     async def get_learning_stats(self) -> Dict[str, Any]:
@@ -231,7 +234,7 @@ class RLFeedbackSystem:
             }
             
         except Exception as e:
-            self.logger.error(f"Error calculating learning stats: {e}")
+            self.logger.error("Error calculating learning stats: %s", e)
             return {"error": str(e)}
     
     def _calculate_learning_progress(self) -> float:
@@ -268,11 +271,11 @@ class RLFeedbackSystem:
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(models_data, f, ensure_ascii=False, indent=2)
             
-            self.logger.info(f"Saved RL models to {filepath}")
+            self.logger.info("Saved RL models to %s", filepath)
             return True
             
         except Exception as e:
-            self.logger.error(f"Error saving models: {e}")
+            self.logger.error("Error saving models: %s", e)
             return False
     
     async def load_models(self, filepath: str) -> bool:
@@ -284,9 +287,9 @@ class RLFeedbackSystem:
             self.user_models = defaultdict(dict, models_data.get("user_models", {}))
             self.product_features = models_data.get("product_features", {})
             
-            self.logger.info(f"Loaded RL models from {filepath}")
+            self.logger.info("Loaded RL models from %s", filepath)
             return True
             
         except Exception as e:
-            self.logger.error(f"Error loading models: {e}")
+            self.logger.error("Error loading models: %s", e)
             return False

@@ -71,7 +71,7 @@ class BaseModel(ABC):
                 response = await self.generate(prompt, **kwargs)
                 results.append(response)
             except Exception as e:
-                self.logger.error(f"Error processing prompt: {e}")
+                self.logger.error("Error processing prompt: %s", e)
                 results.append(ModelResponse(
                     content="",
                     metadata={},

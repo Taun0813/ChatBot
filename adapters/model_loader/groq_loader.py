@@ -36,11 +36,11 @@ class GroqLoader(BaseModelLoader):
             # Initialize Groq client
             self.client = Groq(api_key=self.api_key)
             
-            logger.info(f"Groq model {self.model_name} initialized successfully")
+            logger.info("Groq model %s initialized successfully", self.model_name)
             return True
             
         except Exception as e:
-            logger.error(f"Failed to initialize Groq model: {e}")
+            logger.error("Failed to initialize Groq model: %s", e)
             return False
     
     async def generate_response(
@@ -73,7 +73,7 @@ class GroqLoader(BaseModelLoader):
             return response.choices[0].message.content
             
         except Exception as e:
-            logger.error(f"Failed to generate response with Groq: {e}")
+            logger.error("Failed to generate response with Groq: %s", e)
             return "Xin lỗi, tôi gặp lỗi khi tạo phản hồi. Vui lòng thử lại sau."
     
     async def cleanup(self) -> None:
@@ -84,4 +84,4 @@ class GroqLoader(BaseModelLoader):
             logger.info("Groq loader cleanup completed")
             
         except Exception as e:
-            logger.error(f"Error during Groq cleanup: {e}")
+            logger.error("Error during Groq cleanup: %s", e)

@@ -40,11 +40,11 @@ class GeminiLoader(BaseModelLoader):
             # Initialize model
             self.model = genai.GenerativeModel(self.model_name)
             
-            logger.info(f"Gemini model {self.model_name} initialized successfully")
+            logger.info("Gemini model %s initialized successfully", self.model_name)
             return True
             
         except Exception as e:
-            logger.error(f"Failed to initialize Gemini model: {e}")
+            logger.error("Failed to initialize Gemini model: %s", e)
             return False
     
     async def generate_response(
@@ -85,7 +85,7 @@ class GeminiLoader(BaseModelLoader):
             candidate = response.candidates[0]
             if not candidate.content or not candidate.content.parts:
                 reason = getattr(candidate, "finish_reason", None) or "unknown"
-                logger.warning(f"Gemini blocked or empty content: finish_reason={reason}")
+                logger.warning("Gemini blocked or empty content: finish_reason=%s", reason)
                 return "Xin lỗi, tôi không thể tạo phản hồi cho nội dung này. Bạn thử hỏi khác nhé."
             text = response.text
             if not (text and text.strip()):
@@ -109,4 +109,4 @@ class GeminiLoader(BaseModelLoader):
             logger.info("Gemini loader cleanup completed")
             
         except Exception as e:
-            logger.error(f"Error during Gemini cleanup: {e}")
+            logger.error("Error during Gemini cleanup: %s", e)

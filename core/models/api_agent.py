@@ -21,9 +21,9 @@ class APIAgent(BaseAgent):
         try:
             await self.api_model.initialize()
             self.is_initialized = True
-            self.logger.info(f"API Agent {self.config.name} initialized")
+            self.logger.info("API Agent %s initialized", self.config.name)
         except Exception as e:
-            self.logger.error(f"Failed to initialize API Agent: {e}")
+            self.logger.error("Failed to initialize API Agent: %s", e)
             raise
     
     async def process(self, request: Dict[str, Any]) -> AgentResponse:
@@ -66,7 +66,7 @@ class APIAgent(BaseAgent):
             )
             
         except Exception as e:
-            self.logger.error(f"Error processing API request: {e}")
+            self.logger.error("Error processing API request: %s", e)
             return AgentResponse(
                 content="I encountered an error while processing your API request. Please try again.",
                 confidence=0.0,
@@ -125,7 +125,7 @@ class APIAgent(BaseAgent):
         try:
             return await self.api_model.get_available_services()
         except Exception as e:
-            self.logger.error(f"Error getting available services: {e}")
+            self.logger.error("Error getting available services: %s", e)
             return []
     
     async def test_service_connection(self, service_name: str) -> bool:
@@ -133,13 +133,13 @@ class APIAgent(BaseAgent):
         try:
             return await self.api_model.test_service_connection(service_name)
         except Exception as e:
-            self.logger.error(f"Error testing service connection: {e}")
+            self.logger.error("Error testing service connection: %s", e)
             return False
     
     async def cleanup(self) -> None:
         """Cleanup API agent resources"""
         try:
             await self.api_model.cleanup()
-            self.logger.info(f"API Agent {self.config.name} cleaned up")
+            self.logger.info("API Agent %s cleaned up", self.config.name)
         except Exception as e:
-            self.logger.error(f"Error during API agent cleanup: {e}")
+            self.logger.error("Error during API agent cleanup: %s", e)

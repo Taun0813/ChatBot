@@ -32,10 +32,10 @@ class OpenAILoader(BaseModelLoader):
         """Initialize OpenAI client"""
         try:
             self.client = openai.AsyncOpenAI(api_key=self.api_key)
-            logger.info(f"OpenAI loader initialized with model: {self.model_name}")
+            logger.info("OpenAI loader initialized with model: %s", self.model_name)
             return True
         except Exception as e:
-            logger.error(f"Failed to initialize OpenAI loader: {e}")
+            logger.error("Failed to initialize OpenAI loader: %s", e)
             return False
     
     async def generate_response(
@@ -87,7 +87,7 @@ class OpenAILoader(BaseModelLoader):
                 return "No response generated"
                 
         except Exception as e:
-            logger.error(f"Failed to generate response with OpenAI: {e}")
+            logger.error("Failed to generate response with OpenAI: %s", e)
             return f"Error generating response: {str(e)}"
     
     async def cleanup(self):
@@ -98,7 +98,7 @@ class OpenAILoader(BaseModelLoader):
                 self.client = None
             logger.info("OpenAI loader cleanup completed")
         except Exception as e:
-            logger.error(f"Error during OpenAI loader cleanup: {e}")
+            logger.error("Error during OpenAI loader cleanup: %s", e)
     
     def get_model_info(self) -> Dict[str, Any]:
         """Get model information"""

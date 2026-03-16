@@ -27,11 +27,11 @@ class DatasetProcessor:
             with open(self.dataset_path, 'r', encoding='utf-8') as f:
                 dataset = json.load(f)
             
-            self.logger.info(f"Loaded {len(dataset)} mobile phones from dataset")
+            self.logger.info("Loaded %s mobile phones from dataset", len(dataset))
             return dataset
             
         except Exception as e:
-            self.logger.error(f"Error loading dataset: {e}")
+            self.logger.error("Error loading dataset: %s", e)
             raise
     
     def process_products(self, dataset: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -82,10 +82,10 @@ class DatasetProcessor:
                 products.append(product)
                 
             except Exception as e:
-                self.logger.warning(f"Error processing phone {i}: {e}")
+                self.logger.warning("Error processing phone %s: %s", i, e)
                 continue
         
-        self.logger.info(f"Processed {len(products)} products")
+        self.logger.info("Processed %s products", len(products))
         return products
     
     def _create_product_description(self, phone: Dict[str, Any]) -> str:
@@ -274,7 +274,7 @@ class DatasetProcessor:
             
             conversations.append(conversation)
         
-        self.logger.info(f"Generated {len(conversations)} sample conversations")
+        self.logger.info("Generated %s sample conversations", len(conversations))
         return conversations
     
     def generate_knowledge_base(self, products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -348,7 +348,7 @@ class DatasetProcessor:
             }
             knowledge_base.append(entry)
         
-        self.logger.info(f"Generated {len(knowledge_base)} knowledge base entries")
+        self.logger.info("Generated %s knowledge base entries", len(knowledge_base))
         return knowledge_base
     
     def save_processed_data(
@@ -363,29 +363,29 @@ class DatasetProcessor:
             products_file = os.path.join(self.processed_data_dir, "products.json")
             with open(products_file, 'w', encoding='utf-8') as f:
                 json.dump(products, f, ensure_ascii=False, indent=2)
-            self.logger.info(f"Saved {len(products)} products to {products_file}")
+            self.logger.info("Saved %s products to %s", len(products), products_file)
             
             # Save conversations
             conversations_file = os.path.join(self.processed_data_dir, "conversations.json")
             with open(conversations_file, 'w', encoding='utf-8') as f:
                 json.dump(conversations, f, ensure_ascii=False, indent=2)
-            self.logger.info(f"Saved {len(conversations)} conversations to {conversations_file}")
+            self.logger.info("Saved %s conversations to %s", len(conversations), conversations_file)
             
             # Save knowledge base
             kb_file = os.path.join(self.processed_data_dir, "knowledge_base.json")
             with open(kb_file, 'w', encoding='utf-8') as f:
                 json.dump(knowledge_base, f, ensure_ascii=False, indent=2)
-            self.logger.info(f"Saved {len(knowledge_base)} knowledge base entries to {kb_file}")
+            self.logger.info("Saved %s knowledge base entries to %s", len(knowledge_base), kb_file)
             
             # Save training data
             training_data = self._create_training_data(products, conversations)
             training_file = os.path.join(self.processed_data_dir, "training_data.json")
             with open(training_file, 'w', encoding='utf-8') as f:
                 json.dump(training_data, f, ensure_ascii=False, indent=2)
-            self.logger.info(f"Saved {len(training_data)} training examples to {training_file}")
+            self.logger.info("Saved %s training examples to %s", len(training_data), training_file)
             
         except Exception as e:
-            self.logger.error(f"Error saving processed data: {e}")
+            self.logger.error("Error saving processed data: %s", e)
             raise
     
     def _create_training_data(
@@ -455,7 +455,7 @@ class DatasetProcessor:
             print("="*60)
             
         except Exception as e:
-            self.logger.error(f"Dataset processing failed: {e}")
+            self.logger.error("Dataset processing failed: %s", e)
             raise
 
 def main():

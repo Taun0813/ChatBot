@@ -49,7 +49,7 @@ class PineconeClient:
             if not self.api_key:
                 raise ValueError("Pinecone API key is required")
             
-            logger.info(f"Initializing Pinecone client for index: {self.index_name}")
+            logger.info("Initializing Pinecone client for index: %s", self.index_name)
             
             # Initialize Pinecone client
             self.pc = Pinecone(api_key=self.api_key)
@@ -59,18 +59,18 @@ class PineconeClient:
             index_names = [idx.name for idx in existing_indexes]
             
             if self.index_name not in index_names:
-                logger.info(f"Creating new index: {self.index_name}")
+                logger.info("Creating new index: %s", self.index_name)
                 await self._create_index()
             else:
-                logger.info(f"Using existing index: {self.index_name}")
+                logger.info("Using existing index: %s", self.index_name)
                 self.index = self.pc.Index(self.index_name)
             
             # Get index stats
             stats = self.index.describe_index_stats()
-            logger.info(f"Index stats: {stats}")
+            logger.info("Index stats: %s", stats)
             
         except Exception as e:
-            logger.error(f"Failed to initialize Pinecone: {e}")
+            logger.error("Failed to initialize Pinecone: %s", e)
             raise
     
     async def _create_index(self):
@@ -100,10 +100,10 @@ class PineconeClient:
                 await asyncio.sleep(1)
             
             self.index = self.pc.Index(self.index_name)
-            logger.info(f"Index {self.index_name} created successfully")
+            logger.info("Index %s created successfully", self.index_name)
             
         except Exception as e:
-            logger.error(f"Failed to create index: {e}")
+            logger.error("Failed to create index: %s", e)
             raise
     
     async def upsert_vectors(
@@ -125,7 +125,7 @@ class PineconeClient:
             if not self.index:
                 raise ValueError("Index not initialized")
             
-            logger.info(f"Upserting {len(vectors)} vectors to namespace: {namespace}")
+            logger.info("Upserting %s vectors to namespace: %s", len(vectors), namespace)
             
             # Validate vectors
             for vector in vectors:
@@ -141,11 +141,11 @@ class PineconeClient:
                 namespace=namespace
             )
             
-            logger.info(f"Successfully upserted {response.upserted_count} vectors")
+            logger.info("Successfully upserted %s vectors", response.upserted_count)
             return response
             
         except Exception as e:
-            logger.error(f"Failed to upsert vectors: {e}")
+            logger.error("Failed to upsert vectors: %s", e)
             raise
     
     async def search_vectors(
@@ -176,7 +176,7 @@ class PineconeClient:
             if len(query_vector) != self.dimension:
                 raise ValueError(f"Query vector dimension must be {self.dimension}")
             
-            logger.info(f"Searching for {top_k} similar vectors")
+            logger.info("Searching for %s similar vectors", top_k)
             
             # Perform search
             search_response = self.index.query(
@@ -197,11 +197,11 @@ class PineconeClient:
                 }
                 results.append(result)
             
-            logger.info(f"Found {len(results)} results")
+            logger.info("Found %s results", len(results))
             return results
             
         except Exception as e:
-            logger.error(f"Failed to search vectors: {e}")
+            logger.error("Failed to search vectors: %s", e)
             raise
     
     async def search_products(
@@ -270,11 +270,11 @@ class PineconeClient:
                 }
                 products.append(product)
             
-            logger.info(f"Found {len(products)} products")
+            logger.info("Found %s products", len(products))
             return products
             
         except Exception as e:
-            logger.error(f"Failed to search products: {e}")
+            logger.error("Failed to search products: %s", e)
             raise
     
     async def get_vector_by_id(
@@ -312,7 +312,7 @@ class PineconeClient:
             return None
             
         except Exception as e:
-            logger.error(f"Failed to get vector by ID: {e}")
+            logger.error("Failed to get vector by ID: %s", e)
             raise
     
     async def delete_vectors(
@@ -334,18 +334,18 @@ class PineconeClient:
             if not self.index:
                 raise ValueError("Index not initialized")
             
-            logger.info(f"Deleting {len(vector_ids)} vectors")
+            logger.info("Deleting %s vectors", len(vector_ids))
             
             response = self.index.delete(
                 ids=vector_ids,
                 namespace=namespace
             )
             
-            logger.info(f"Successfully deleted vectors")
+            logger.info("Successfully deleted vectors")
             return response
             
         except Exception as e:
-            logger.error(f"Failed to delete vectors: {e}")
+            logger.error("Failed to delete vectors: %s", e)
             raise
     
     async def get_index_stats(self) -> Dict[str, Any]:
@@ -363,7 +363,7 @@ class PineconeClient:
             }
             
         except Exception as e:
-            logger.error(f"Failed to get index stats: {e}")
+            logger.error("Failed to get index stats: %s", e)
             raise
     
     async def cleanup(self):
@@ -374,4 +374,4 @@ class PineconeClient:
             logger.info("Pinecone client cleanup completed")
             
         except Exception as e:
-            logger.error(f"Error during Pinecone cleanup: {e}")
+            logger.error("Error during Pinecone cleanup: %s", e)

@@ -47,7 +47,7 @@ class DataInitializer:
             logger.info("Data initialization system ready")
             
         except Exception as e:
-            logger.error(f"Failed to initialize data system: {e}")
+            logger.error("Failed to initialize data system: %s", e)
             raise
     
     async def _initialize_pinecone(self):
@@ -65,7 +65,7 @@ class DataInitializer:
             logger.info("Pinecone client initialized")
             
         except Exception as e:
-            logger.error(f"Failed to initialize Pinecone: {e}")
+            logger.error("Failed to initialize Pinecone: %s", e)
             raise
     
     async def _initialize_model_loader(self):
@@ -79,10 +79,10 @@ class DataInitializer:
                 top_p=self.settings.top_p
             )
             
-            logger.info(f"Model loader initialized: {self.settings.model_loader_backend}")
+            logger.info("Model loader initialized: %s", self.settings.model_loader_backend)
             
         except Exception as e:
-            logger.error(f"Failed to initialize model loader: {e}")
+            logger.error("Failed to initialize model loader: %s", e)
             raise
     
     async def _initialize_rag_model(self):
@@ -97,7 +97,7 @@ class DataInitializer:
             logger.info("RAG model initialized")
             
         except Exception as e:
-            logger.error(f"Failed to initialize RAG model: {e}")
+            logger.error("Failed to initialize RAG model: %s", e)
             raise
     
     async def load_dataset(
@@ -109,7 +109,7 @@ class DataInitializer:
             if not os.path.exists(dataset_path):
                 raise FileNotFoundError(f"Dataset file not found: {dataset_path}")
 
-            logger.info(f"Loading dataset from {dataset_path}")
+            logger.info("Loading dataset from %s", dataset_path)
 
             if format == "auto":
                 if dataset_path.endswith(".json"):
@@ -123,7 +123,7 @@ class DataInitializer:
                 with open(dataset_path, "r", encoding="utf-8-sig", errors="replace") as f:
                     data = json.load(f)
                 products = data if isinstance(data, list) else data.get("products", data.get("items", []))
-                logger.info(f"Loaded {len(products)} products from JSON")
+                logger.info("Loaded %s products from JSON", len(products))
                 return products
 
             import pandas as pd
@@ -140,13 +140,13 @@ class DataInitializer:
             # Log first row keys để debug nếu có lỗi (unknown_unknown)
             if dataset and format == "mobile_csv":
                 sample_keys = list(dataset[0].keys())[:3]
-                logger.info(f"CSV columns sample: {sample_keys}")
+                logger.info("CSV columns sample: %s", sample_keys)
 
-            logger.info(f"Loaded {len(dataset)} products ({format})")
+            logger.info("Loaded %s products (%s)", len(dataset), format)
             return dataset
 
         except Exception as e:
-            logger.error(f"Failed to load dataset: {e}")
+            logger.error("Failed to load dataset: %s", e)
             raise
 
     
@@ -414,7 +414,7 @@ class DataInitializer:
             return product_data
             
         except Exception as e:
-            logger.error(f"Failed to transform product data: {e} | Data: {raw_product}")
+            logger.error("Failed to transform product data: %s | Data: %s", e, raw_product)
             return None
     
     def _extract_features(self, specs: Dict[str, Any], price: int) -> List[str]:
@@ -436,7 +436,7 @@ class DataInitializer:
             cam_match = re.search(r'(\d+)', cam_str)
             cam_main = float(cam_match.group(1)) if cam_match else 0
         except Exception as e:
-            logger.warning(f"Error parsing features: {e}")
+            logger.warning("Error parsing features: %s", e)
             ram, battery, cam_main = 0, 0, 0
             
         # Camera features
@@ -478,7 +478,7 @@ class DataInitializer:
     ) -> bool:
         """Ingest products into Pinecone. use_generic_transform=True for laptop/tablet/accessories."""
         try:
-            logger.info(f"Starting to ingest {len(products)} products (generic={use_generic_transform})...")
+            logger.info("Starting to ingest %s products (generic=%s)...", len(products), use_generic_transform)
             
             success_count = 0
             failed_count = 0
@@ -491,7 +491,7 @@ class DataInitializer:
             # Process in batches
             for i in range(0, len(products), batch_size):
                 batch = products[i:i + batch_size]
-                logger.info(f"Processing batch {i//batch_size + 1}/{(len(products) + batch_size - 1)//batch_size}")
+                logger.info("Processing batch %s/%s", i // batch_size + 1, (len(products) + batch_size - 1) // batch_size)
                 
                 for product in batch:
                     try:
@@ -525,17 +525,17 @@ class DataInitializer:
                             failed_count += 1
                             
                     except Exception as e:
-                        logger.error(f"Failed to ingest product {product.get('Model Name', 'Unknown')}: {e}")
+                        logger.error("Failed to ingest product %s: %s", product.get("Model Name", "Unknown"), e)
                         failed_count += 1
                 
                 # Small delay between batches
                 await asyncio.sleep(0.1)
             
-            logger.info(f"Ingestion completed: {success_count} success, {failed_count} failed")
+            logger.info("Ingestion completed: %s success, %s failed", success_count, failed_count)
             return success_count > 0
             
         except Exception as e:
-            logger.error(f"Failed to ingest products: {e}")
+            logger.error("Failed to ingest products: %s", e)
             return False
         
     async def export_products_to_json(
@@ -548,7 +548,7 @@ class DataInitializer:
         Transform products and export to JSON instead of Pinecone
         """
         try:
-            logger.info(f"Exporting {len(products)} products to JSON...")
+            logger.info("Exporting %s products to JSON...", len(products))
 
             exported = []
             failed = 0
@@ -578,7 +578,7 @@ class DataInitializer:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to export products to JSON: {e}")
+            logger.error("Failed to export products to JSON: %s", e)
             return False
 
     
@@ -594,7 +594,7 @@ class DataInitializer:
             logger.info("Data initializer cleanup completed")
             
         except Exception as e:
-            logger.error(f"Error during cleanup: {e}")
+            logger.error("Error during cleanup: %s", e)
 
 async def main():
     """Main initialization function. Supports: init_data.py [dataset_path] [--generic]"""
@@ -643,7 +643,7 @@ async def main():
         await initializer.cleanup()
         
     except Exception as e:
-        logger.error(f"Data initialization failed: {e}")
+        logger.error("Data initialization failed: %s", e)
 
 if __name__ == "__main__":
     asyncio.run(main())

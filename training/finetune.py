@@ -437,7 +437,7 @@ async def main():
     test_data_path = "training/dataset/test_conversations.json"
     
     if not Path(train_data_path).exists():
-        logger.error(f"Training data not found at {train_data_path}")
+        logger.error("Training data not found at %s", train_data_path)
         logger.info("Please run prepare_data.py first to generate training data")
         return
     

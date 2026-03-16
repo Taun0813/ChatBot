@@ -25,7 +25,7 @@ class SpringBootClient:
             self.client = httpx.AsyncClient(timeout=self.timeout)
             logger.info("SpringBootClient initialized")
         except Exception as e:
-            logger.error(f"Failed to initialize SpringBootClient: {e}")
+            logger.error("Failed to initialize SpringBootClient: %s", e)
             raise
     
     async def cleanup(self):
@@ -66,10 +66,10 @@ class SpringBootClient:
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error getting products: {e.response.status_code}")
+            logger.error("HTTP error getting products: %s", e.response.status_code)
             return {"content": [], "totalElements": 0}
         except Exception as e:
-            logger.error(f"Error getting products: {e}")
+            logger.error("Error getting products: %s", e)
             return {"content": [], "totalElements": 0}
     
     async def get_product_by_id(self, product_id: str) -> Optional[Dict[str, Any]]:
@@ -85,10 +85,10 @@ class SpringBootClient:
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error getting product {product_id}: {e.response.status_code}")
+            logger.error("HTTP error getting product %s: %s", product_id, e.response.status_code)
             return None
         except Exception as e:
-            logger.error(f"Error getting product {product_id}: {e}")
+            logger.error("Error getting product %s: %s", product_id, e)
             return None
     
     async def create_order(self, order_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -105,10 +105,10 @@ class SpringBootClient:
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error creating order: {e.response.status_code}")
+            logger.error("HTTP error creating order: %s", e.response.status_code)
             raise
         except Exception as e:
-            logger.error(f"Error creating order: {e}")
+            logger.error("Error creating order: %s", e)
             raise
     
     async def get_order(self, order_id: str) -> Optional[Dict[str, Any]]:
@@ -125,12 +125,12 @@ class SpringBootClient:
             return response.json()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                logger.warning(f"Order {order_id} not found")
+                logger.warning("Order %s not found", order_id)
             else:
-                logger.error(f"HTTP error getting order {order_id}: {e.response.status_code}")
+                logger.error("HTTP error getting order %s: %s", order_id, e.response.status_code)
             return None
         except Exception as e:
-            logger.error(f"Error getting order {order_id}: {e}")
+            logger.error("Error getting order %s: %s", order_id, e)
             return None
     
     async def get_user_orders(self, user_id: str) -> List[Dict[str, Any]]:
@@ -147,7 +147,7 @@ class SpringBootClient:
             data = response.json()
             return data.get("content", []) if isinstance(data, dict) else data
         except Exception as e:
-            logger.error(f"Error getting user orders: {e}")
+            logger.error("Error getting user orders: %s", e)
             return []
     
     async def add_to_cart(self, user_id: str, product_id: str, quantity: int = 1) -> Dict[str, Any]:
@@ -170,10 +170,10 @@ class SpringBootClient:
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error adding to cart: {e.response.status_code}")
+            logger.error("HTTP error adding to cart: %s", e.response.status_code)
             raise
         except Exception as e:
-            logger.error(f"Error adding to cart: {e}")
+            logger.error("Error adding to cart: %s", e)
             raise
     
     async def get_cart(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -190,12 +190,12 @@ class SpringBootClient:
             return response.json()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                logger.warning(f"Cart for user {user_id} not found")
+                logger.warning("Cart for user %s not found", user_id)
             else:
-                logger.error(f"HTTP error getting cart: {e.response.status_code}")
+                logger.error("HTTP error getting cart: %s", e.response.status_code)
             return None
         except Exception as e:
-            logger.error(f"Error getting cart: {e}")
+            logger.error("Error getting cart: %s", e)
             return None
     
     async def clear_cart(self, user_id: str) -> bool:
@@ -211,7 +211,7 @@ class SpringBootClient:
             response.raise_for_status()
             return True
         except Exception as e:
-            logger.error(f"Error clearing cart: {e}")
+            logger.error("Error clearing cart: %s", e)
             return False
     
     async def process_payment(self, payment_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -228,10 +228,10 @@ class SpringBootClient:
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error processing payment: {e.response.status_code}")
+            logger.error("HTTP error processing payment: %s", e.response.status_code)
             raise
         except Exception as e:
-            logger.error(f"Error processing payment: {e}")
+            logger.error("Error processing payment: %s", e)
             raise
     
     async def get_warranty(self, warranty_id: str) -> Optional[Dict[str, Any]]:
@@ -247,7 +247,7 @@ class SpringBootClient:
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            logger.error(f"Error getting warranty {warranty_id}: {e}")
+            logger.error("Error getting warranty %s: %s", warranty_id, e)
             return None
     
     async def login(self, username: str, password: str) -> Optional[Dict[str, Any]]:
@@ -270,7 +270,7 @@ class SpringBootClient:
             
             return token_data
         except Exception as e:
-            logger.error(f"Error during login: {e}")
+            logger.error("Error during login: %s", e)
             return None
     
     def set_token(self, token: str):

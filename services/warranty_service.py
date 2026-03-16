@@ -92,7 +92,7 @@ class WarrantyService:
             return None
             
         except Exception as e:
-            logger.error(f"Error checking warranty: {e}")
+            logger.error("Error checking warranty: %s", e)
             return None
     
     async def create_warranty(
@@ -122,7 +122,7 @@ class WarrantyService:
             
             self.warranties[warranty_id] = warranty
             
-            logger.info(f"Created warranty {warranty_id} for product {product_id}")
+            logger.info("Created warranty %s for product %s", warranty_id, product_id)
             
             return {
                 "id": warranty.id,
@@ -135,7 +135,7 @@ class WarrantyService:
             }
             
         except Exception as e:
-            logger.error(f"Error creating warranty: {e}")
+            logger.error("Error creating warranty: %s", e)
             return None
     
     async def get_customer_warranties(self, customer_id: str) -> List[Dict[str, Any]]:
@@ -158,7 +158,7 @@ class WarrantyService:
             return customer_warranties
             
         except Exception as e:
-            logger.error(f"Error getting customer warranties: {e}")
+            logger.error("Error getting customer warranties: %s", e)
             return []
     
     async def claim_warranty(self, warranty_id: str, claim_reason: str) -> bool:
@@ -169,16 +169,16 @@ class WarrantyService:
                 return False
             
             if warranty.status != WarrantyStatus.ACTIVE:
-                logger.warning(f"Cannot claim warranty {warranty_id} with status {warranty.status.value}")
+                logger.warning("Cannot claim warranty %s with status %s", warranty_id, warranty.status.value)
                 return False
             
             warranty.status = WarrantyStatus.CLAIMED
             
-            logger.info(f"Claimed warranty {warranty_id}: {claim_reason}")
+            logger.info("Claimed warranty %s: %s", warranty_id, claim_reason)
             return True
             
         except Exception as e:
-            logger.error(f"Error claiming warranty: {e}")
+            logger.error("Error claiming warranty: %s", e)
             return False
     
     async def get_warranty_stats(self) -> Dict[str, Any]:
@@ -207,7 +207,7 @@ class WarrantyService:
             }
             
         except Exception as e:
-            logger.error(f"Error getting warranty stats: {e}")
+            logger.error("Error getting warranty stats: %s", e)
             return {}
 
 # Global service instance

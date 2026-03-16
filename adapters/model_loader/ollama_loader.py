@@ -38,14 +38,14 @@ class OllamaLoader(BaseModelLoader):
             # Test connection
             response = await self.client.get("/api/tags")
             if response.status_code == 200:
-                logger.info(f"Ollama model {self.model_name} initialized successfully")
+                logger.info("Ollama model %s initialized successfully", self.model_name)
                 return True
             else:
-                logger.error(f"Failed to connect to Ollama: {response.status_code}")
+                logger.error("Failed to connect to Ollama: %s", response.status_code)
                 return False
                 
         except Exception as e:
-            logger.error(f"Failed to initialize Ollama model: {e}")
+            logger.error("Failed to initialize Ollama model: %s", e)
             return False
     
     async def generate_response(
@@ -85,7 +85,7 @@ class OllamaLoader(BaseModelLoader):
             return result.get("response", "")
             
         except Exception as e:
-            logger.error(f"Failed to generate response with Ollama: {e}")
+            logger.error("Failed to generate response with Ollama: %s", e)
             return "Xin lỗi, tôi gặp lỗi khi tạo phản hồi. Vui lòng thử lại sau."
     
     async def cleanup(self) -> None:
@@ -97,4 +97,4 @@ class OllamaLoader(BaseModelLoader):
             logger.info("Ollama loader cleanup completed")
             
         except Exception as e:
-            logger.error(f"Error during Ollama cleanup: {e}")
+            logger.error("Error during Ollama cleanup: %s", e)

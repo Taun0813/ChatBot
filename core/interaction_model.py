@@ -42,7 +42,7 @@ class InteractionModel:
             Generated response
         """
         try:
-            logger.info(f"Generating response for: {message[:50]}...")
+            logger.info("Generating response for: %s...", message[:50])
             
             # Create system prompt
             system_prompt = self._create_system_prompt(user_id, context)
@@ -65,11 +65,11 @@ Trợ lý AI:"""
                 temperature=0.7
             )
             
-            logger.info(f"Generated response: {response[:50]}...")
+            logger.info("Generated response: %s...", response[:50])
             return response
             
         except Exception as e:
-            logger.error(f"Failed to generate response: {e}")
+            logger.error("Failed to generate response: %s", e)
             return "Xin lỗi, tôi gặp lỗi khi xử lý yêu cầu của bạn. Vui lòng thử lại sau."
     
     async def generate_search_response(
@@ -84,7 +84,7 @@ Trợ lý AI:"""
         Generate response for product search - chỉ đưa tối đa max_products_in_prompt vào prompt để giảm token và latency.
         """
         try:
-            logger.info(f"Generating search response for query: {query}")
+            logger.info("Generating search response for query: %s", query)
             
             if not search_results:
                 return PromptTemplates.get_no_results_prompt(query)
@@ -111,7 +111,7 @@ Trợ lý AI:"""
             return first_line
             
         except Exception as e:
-            logger.error(f"Failed to generate search response: {e}")
+            logger.error("Failed to generate search response: %s", e)
             return self._generate_fallback_search_response(query, search_results)
     
     def _create_system_prompt(
@@ -209,7 +209,7 @@ Bạn có muốn tôi gợi ý một số sản phẩm phổ biến không?"""
     ) -> str:
         """Generate personalized response based on user preferences"""
         try:
-            logger.info(f"Generating personalized response for user: {user_id}")
+            logger.info("Generating personalized response for user: %s", user_id)
             
             # Create personalized prompt
             prompt = PromptTemplates.get_product_recommendation_prompt(
@@ -227,7 +227,7 @@ Bạn có muốn tôi gợi ý một số sản phẩm phổ biến không?"""
             return response
             
         except Exception as e:
-            logger.error(f"Failed to generate personalized response: {e}")
+            logger.error("Failed to generate personalized response: %s", e)
             return self._generate_fallback_search_response(query, products)
     
     async def generate_comparison_response(
@@ -237,7 +237,7 @@ Bạn có muốn tôi gợi ý một số sản phẩm phổ biến không?"""
     ) -> str:
         """Generate product comparison response"""
         try:
-            logger.info(f"Generating comparison response for {len(products)} products")
+            logger.info("Generating comparison response for %s products", len(products))
             
             # Create comparison prompt
             prompt = PromptTemplates.get_comparison_prompt(products)
@@ -252,7 +252,7 @@ Bạn có muốn tôi gợi ý một số sản phẩm phổ biến không?"""
             return response
             
         except Exception as e:
-            logger.error(f"Failed to generate comparison response: {e}")
+            logger.error("Failed to generate comparison response: %s", e)
             return "Xin lỗi, tôi không thể so sánh sản phẩm lúc này. Vui lòng thử lại sau."
     
     async def generate_order_response(
@@ -262,7 +262,7 @@ Bạn có muốn tôi gợi ý một số sản phẩm phổ biến không?"""
     ) -> str:
         """Generate order status response"""
         try:
-            logger.info(f"Generating order response for order: {order_info.get('order_id')}")
+            logger.info("Generating order response for order: %s", order_info.get("order_id"))
             
             # Create order status prompt
             prompt = PromptTemplates.get_order_status_prompt(order_info)
@@ -277,7 +277,7 @@ Bạn có muốn tôi gợi ý một số sản phẩm phổ biến không?"""
             return response
             
         except Exception as e:
-            logger.error(f"Failed to generate order response: {e}")
+            logger.error("Failed to generate order response: %s", e)
             return "Xin lỗi, tôi không thể tra cứu thông tin đơn hàng lúc này. Vui lòng thử lại sau."
     
     def _generate_fallback_search_response(

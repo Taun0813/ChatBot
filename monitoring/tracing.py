@@ -194,7 +194,7 @@ class RequestTracer:
             self.logger.info("OpenTelemetry tracing initialized")
             
         except Exception as e:
-            self.logger.error(f"Failed to setup OpenTelemetry: {e}")
+            self.logger.error("Failed to setup OpenTelemetry: %s", e)
             self.enable_opentelemetry = False
     
     def start_trace(
@@ -220,7 +220,7 @@ class RequestTracer:
                 ot_span.set_attributes(tags or {})
                 trace_context.ot_span = ot_span
             except Exception as e:
-                self.logger.warning(f"Failed to create OpenTelemetry span: {e}")
+                self.logger.warning("Failed to create OpenTelemetry span: %s", e)
         
         with self._lock:
             self.active_traces[trace_id] = trace_context
@@ -228,7 +228,7 @@ class RequestTracer:
         # Set as current trace
         current_trace.set(trace_context)
         
-        self.logger.debug(f"Started trace: {trace_id}")
+        self.logger.debug("Started trace: %s", trace_id)
         return trace_context
     
     def finish_trace(self, trace_id: str) -> Optional[TraceContext]:
@@ -243,7 +243,7 @@ class RequestTracer:
                     try:
                         trace_context.ot_span.end()
                     except Exception as e:
-                        self.logger.warning(f"Failed to finish OpenTelemetry span: {e}")
+                        self.logger.warning("Failed to finish OpenTelemetry span: %s", e)
                 
                 self.completed_traces.append(trace_context)
                 
@@ -251,7 +251,7 @@ class RequestTracer:
                 if len(self.completed_traces) > 1000:
                     self.completed_traces = self.completed_traces[-1000:]
                 
-                self.logger.debug(f"Finished trace: {trace_id}")
+                self.logger.debug("Finished trace: %s", trace_id)
                 return trace_context
         
         return None
@@ -325,7 +325,7 @@ class RequestTracer:
             
             self.completed_traces = traces_to_keep
         
-        self.logger.info(f"Cleaned up {cleaned_count} old traces")
+        self.logger.info("Cleaned up %s old traces", cleaned_count)
         return cleaned_count
 
 # Global tracer instance

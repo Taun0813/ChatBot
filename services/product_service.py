@@ -116,7 +116,7 @@ class ProductService:
             return len(self.products) > 0
 
         except Exception as e:
-            logger.error(f"Error loading dataset: {e}")
+            logger.error("Error loading dataset: %s", e)
             return False
     
     def _initialize_sample_data(self):
@@ -238,7 +238,7 @@ class ProductService:
             return results[:limit]
             
         except Exception as e:
-            logger.error(f"Error searching products: {e}")
+            logger.error("Error searching products: %s", e)
             return []
     
     async def get_product_details(self, product_id: str) -> Optional[Dict[str, Any]]:
@@ -264,7 +264,7 @@ class ProductService:
             }
             
         except Exception as e:
-            logger.error(f"Error getting product details: {e}")
+            logger.error("Error getting product details: %s", e)
             return None
     
     async def get_products_by_category(self, category: str, limit: int = 10) -> List[Dict[str, Any]]:
@@ -288,7 +288,7 @@ class ProductService:
             return results[:limit]
                 
         except Exception as e:
-            logger.error(f"Error getting products by category: {e}")
+            logger.error("Error getting products by category: %s", e)
             return []
     
     async def get_categories(self) -> List[str]:
@@ -306,7 +306,7 @@ class ProductService:
             return True
             
         except Exception as e:
-            logger.error(f"Error updating stock: {e}")
+            logger.error("Error updating stock: %s", e)
             return False
     
     async def get_product_stats(self) -> Dict[str, Any]:
@@ -329,7 +329,7 @@ class ProductService:
             }
             
         except Exception as e:
-            logger.error(f"Error getting product stats: {e}")
+            logger.error("Error getting product stats: %s", e)
             return {}
 
 # Global service instance

@@ -59,7 +59,7 @@ class PersonalizationModel:
             logger.info("Personalization Model initialization completed")
             
         except Exception as e:
-            logger.error(f"Failed to initialize Personalization Model: {e}")
+            logger.error("Failed to initialize Personalization Model: %s", e)
             raise
     
     async def get_user_profile(self, user_id: str) -> Dict[str, Any]:
@@ -83,7 +83,7 @@ class PersonalizationModel:
                 return await self._get_profile_from_file(user_id)
                 
         except Exception as e:
-            logger.error(f"Failed to get user profile: {e}")
+            logger.error("Failed to get user profile: %s", e)
             return self._get_default_profile()
     
     async def _get_profile_from_file(self, user_id: str) -> Dict[str, Any]:
@@ -109,7 +109,7 @@ class PersonalizationModel:
                 return profile
                 
         except Exception as e:
-            logger.error(f"Failed to get profile from file: {e}")
+            logger.error("Failed to get profile from file: %s", e)
             return self._get_default_profile()
     
     async def update_user_preferences(
@@ -143,11 +143,11 @@ class PersonalizationModel:
             # Save updated profile
             await self._save_user_profile(user_id, profile)
             
-            logger.info(f"Updated preferences for user {user_id}")
+            logger.info("Updated preferences for user %s", user_id)
             return True
             
         except Exception as e:
-            logger.error(f"Failed to update user preferences: {e}")
+            logger.error("Failed to update user preferences: %s", e)
             return False
     
     async def record_user_interaction(
@@ -204,7 +204,7 @@ class PersonalizationModel:
             return True
             
         except Exception as e:
-            logger.error(f"Failed to record user interaction: {e}")
+            logger.error("Failed to record user interaction: %s", e)
             return False
     
     async def get_personalized_recommendations(
@@ -245,7 +245,7 @@ class PersonalizationModel:
                 )
             
         except Exception as e:
-            logger.error(f"Failed to get personalized recommendations: {e}")
+            logger.error("Failed to get personalized recommendations: %s", e)
             return search_results[:max_recommendations]
     
     async def _get_basic_recommendations(
@@ -277,7 +277,7 @@ class PersonalizationModel:
             return scored_products[:max_recommendations]
             
         except Exception as e:
-            logger.error(f"Failed to get basic recommendations: {e}")
+            logger.error("Failed to get basic recommendations: %s", e)
             return products[:max_recommendations]
     
     async def _calculate_personalization_score(
@@ -323,7 +323,7 @@ class PersonalizationModel:
             return min(score, 1.0)
             
         except Exception as e:
-            logger.error(f"Failed to calculate personalization score: {e}")
+            logger.error("Failed to calculate personalization score: %s", e)
             return 0.5
     
     async def _update_profile_from_interaction(
@@ -376,7 +376,7 @@ class PersonalizationModel:
                     profile["ratings"] = ratings
             
         except Exception as e:
-            logger.error(f"Failed to update profile from interaction: {e}")
+            logger.error("Failed to update profile from interaction: %s", e)
     
     def _create_new_profile(self, user_id: str) -> Dict[str, Any]:
         """Create new user profile"""
@@ -417,5 +417,5 @@ class PersonalizationModel:
             return True
             
         except Exception as e:
-            logger.error(f"Failed to save user profile: {e}")
+            logger.error("Failed to save user profile: %s", e)
             return False

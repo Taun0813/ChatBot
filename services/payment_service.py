@@ -94,7 +94,7 @@ class PaymentService:
             try:
                 method = PaymentMethod(payment_method)
             except ValueError:
-                logger.error(f"Invalid payment method: {payment_method}")
+                logger.error("Invalid payment method: %s", payment_method)
                 return None
             
             # Simulate payment processing
@@ -119,7 +119,7 @@ class PaymentService:
             # Simulate processing delay
             await self._simulate_payment_processing(payment)
             
-            logger.info(f"Processed payment {payment_id} for order {order_id}")
+            logger.info("Processed payment %s for order %s", payment_id, order_id)
             
             return {
                 "id": payment.id,
@@ -132,7 +132,7 @@ class PaymentService:
             }
             
         except Exception as e:
-            logger.error(f"Error processing payment: {e}")
+            logger.error("Error processing payment: %s", e)
             return None
     
     async def _simulate_payment_processing(self, payment: Payment):
@@ -173,7 +173,7 @@ class PaymentService:
             }
             
         except Exception as e:
-            logger.error(f"Error getting payment status: {e}")
+            logger.error("Error getting payment status: %s", e)
             return None
     
     async def get_payments_by_order(self, order_id: str) -> List[Dict[str, Any]]:
@@ -195,7 +195,7 @@ class PaymentService:
             return order_payments
             
         except Exception as e:
-            logger.error(f"Error getting payments by order: {e}")
+            logger.error("Error getting payments by order: %s", e)
             return []
     
     async def get_customer_payments(self, customer_id: str, limit: int = 10) -> List[Dict[str, Any]]:
@@ -220,7 +220,7 @@ class PaymentService:
             return customer_payments[:limit]
             
         except Exception as e:
-            logger.error(f"Error getting customer payments: {e}")
+            logger.error("Error getting customer payments: %s", e)
             return []
     
     async def refund_payment(self, payment_id: str, amount: Optional[float] = None, reason: Optional[str] = None) -> bool:
@@ -232,7 +232,7 @@ class PaymentService:
             
             # Only allow refunds for completed payments
             if payment.status != PaymentStatus.COMPLETED:
-                logger.warning(f"Cannot refund payment {payment_id} with status {payment.status.value}")
+                logger.warning("Cannot refund payment %s with status %s", payment_id, payment.status.value)
                 return False
             
             # Update payment status
@@ -242,11 +242,11 @@ class PaymentService:
             if reason:
                 payment.notes = f"Refunded: {reason}"
             
-            logger.info(f"Refunded payment {payment_id}")
+            logger.info("Refunded payment %s", payment_id)
             return True
             
         except Exception as e:
-            logger.error(f"Error refunding payment: {e}")
+            logger.error("Error refunding payment: %s", e)
             return False
     
     async def get_payment_methods(self) -> List[Dict[str, Any]]:
@@ -288,7 +288,7 @@ class PaymentService:
             }
             
         except Exception as e:
-            logger.error(f"Error getting payment stats: {e}")
+            logger.error("Error getting payment stats: %s", e)
             return {}
 
 # Global service instance

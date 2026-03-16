@@ -59,7 +59,7 @@ class APIModel:
             self.client = httpx.AsyncClient(timeout=self.timeout)
             logger.info("API Model initialized with Spring Boot services")
         except Exception as e:
-            logger.error(f"Failed to initialize API Model: {e}")
+            logger.error("Failed to initialize API Model: %s", e)
             raise
     
     async def cleanup(self):
@@ -69,7 +69,7 @@ class APIModel:
                 await self.client.aclose()
             logger.info("API Model cleanup completed")
         except Exception as e:
-            logger.error(f"Error during API Model cleanup: {e}")
+            logger.error("Error during API Model cleanup: %s", e)
     
     async def _call_spring_boot_service(
         self,
@@ -115,13 +115,13 @@ class APIModel:
             return response.json()
             
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error calling {service_name}: {e.response.status_code}")
+            logger.error("HTTP error calling %s: %s", service_name, e.response.status_code)
             return {
                 "error": f"Service error: {e.response.status_code}",
                 "status_code": e.response.status_code
             }
         except Exception as e:
-            logger.error(f"Error calling {service_name}: {e}")
+            logger.error("Error calling %s: %s", service_name, e)
             return {"error": str(e)}
 
     def _extract_jwt_from_context(self, context: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -161,7 +161,7 @@ class APIModel:
             Response about order status
         """
         try:
-            logger.info(f"Handling order request: {message}")
+            logger.info("Handling order request: %s", message)
             
             # Extract order ID from message
             order_id = self._extract_order_id(message)
@@ -179,7 +179,7 @@ class APIModel:
                 context=context
             )
             if "error" in order_info:
-                logger.warning(f"Spring Boot service error: {order_info['error']}")
+                logger.warning("Spring Boot service error: %s", order_info["error"])
                 if order_info.get("status_code") == 401:
                     return "Phiên đăng nhập không hợp lệ hoặc đã hết hạn khi tra cứu đơn hàng. Vui lòng đăng nhập lại và gửi kèm token cho API /ask."
                 return "Xin lỗi, hiện không thể tra cứu thông tin đơn hàng. Vui lòng thử lại sau."
@@ -195,7 +195,7 @@ class APIModel:
             return response
             
         except Exception as e:
-            logger.error(f"Failed to handle order request: {e}")
+            logger.error("Failed to handle order request: %s", e)
             return "Xin lỗi, tôi không thể tra cứu thông tin đơn hàng lúc này. Vui lòng thử lại sau."
     
     async def handle_payment_request(
@@ -206,7 +206,7 @@ class APIModel:
     ) -> str:
         """Handle payment-related requests using Spring Boot service"""
         try:
-            logger.info(f"Handling payment request: {message}")
+            logger.info("Handling payment request: %s", message)
             
             # Extract order ID or payment ID
             order_id = self._extract_order_id(message)
@@ -224,7 +224,7 @@ class APIModel:
                 context=context
             )
             if "error" in payment_info:
-                logger.warning(f"Spring Boot payment error: {payment_info['error']}")
+                logger.warning("Spring Boot payment error: %s", payment_info["error"])
                 if payment_info.get("status_code") == 401:
                     return "Phiên đăng nhập không hợp lệ hoặc đã hết hạn khi tra cứu thanh toán. Vui lòng đăng nhập lại và gửi kèm token cho API /ask."
                 return "Xin lỗi, hiện không thể tra cứu thông tin thanh toán. Vui lòng thử lại sau."
@@ -237,7 +237,7 @@ class APIModel:
             return self._format_payment_response(payment_info)
             
         except Exception as e:
-            logger.error(f"Failed to handle payment request: {e}")
+            logger.error("Failed to handle payment request: %s", e)
             return "Xin lỗi, tôi không thể tra cứu thông tin thanh toán lúc này."
     
     async def handle_warranty_request(
@@ -248,7 +248,7 @@ class APIModel:
     ) -> str:
         """Handle warranty-related requests using Spring Boot service"""
         try:
-            logger.info(f"Handling warranty request: {message}")
+            logger.info("Handling warranty request: %s", message)
             
             # Extract product ID or order ID
             product_id = self._extract_product_id(message)
@@ -276,7 +276,7 @@ class APIModel:
                 )
 
             if "error" in warranty_info:
-                logger.warning(f"Spring Boot warranty error: {warranty_info['error']}")
+                logger.warning("Spring Boot warranty error: %s", warranty_info["error"])
                 if warranty_info.get("status_code") == 401:
                     return "Phiên đăng nhập không hợp lệ hoặc đã hết hạn khi tra cứu bảo hành. Vui lòng đăng nhập lại và gửi kèm token cho API /ask."
                 return "Xin lỗi, hiện không thể tra cứu thông tin bảo hành. Vui lòng thử lại sau."
@@ -289,7 +289,7 @@ class APIModel:
             return self._format_warranty_response(warranty_info)
             
         except Exception as e:
-            logger.error(f"Failed to handle warranty request: {e}")
+            logger.error("Failed to handle warranty request: %s", e)
             return "Xin lỗi, tôi không thể tra cứu thông tin bảo hành lúc này."
     
     def _transform_order_response(self, spring_boot_response: Dict[str, Any]) -> Dict[str, Any]:
@@ -422,7 +422,7 @@ Bạn cần hỗ trợ gì thêm về bảo hành?"""
             Response about API services
         """
         try:
-            logger.info(f"Handling general API request: {message}")
+            logger.info("Handling general API request: %s", message)
             
             # For Phase 1, return basic response
             return """Tôi có thể hỗ trợ bạn với các dịch vụ sau:
@@ -435,7 +435,7 @@ Bạn cần hỗ trợ gì thêm về bảo hành?"""
 Bạn cần hỗ trợ gì cụ thể?"""
             
         except Exception as e:
-            logger.error(f"Failed to handle general API request: {e}")
+            logger.error("Failed to handle general API request: %s", e)
             return "Xin lỗi, tôi không thể xử lý yêu cầu lúc này. Vui lòng thử lại sau."
     
     def _extract_order_id(self, message: str) -> Optional[str]:
@@ -553,7 +553,7 @@ Bạn cần hỗ trợ gì cụ thể?"""
             return "\n".join(response_parts)
                         
         except Exception as e:
-            logger.error(f"Failed to format order response: {e}")
+            logger.error("Failed to format order response: %s", e)
             return f"Đơn hàng #{order_info.get('order_id', 'Unknown')} - Trạng thái: {order_info.get('status', 'Unknown')}"
     
     

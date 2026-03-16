@@ -21,9 +21,9 @@ class ConversationAgent(BaseAgent):
         try:
             await self.interaction_model.initialize()
             self.is_initialized = True
-            self.logger.info(f"Conversation Agent {self.config.name} initialized")
+            self.logger.info("Conversation Agent %s initialized", self.config.name)
         except Exception as e:
-            self.logger.error(f"Failed to initialize Conversation Agent: {e}")
+            self.logger.error("Failed to initialize Conversation Agent: %s", e)
             raise
     
     async def process(self, request: Dict[str, Any]) -> AgentResponse:
@@ -66,7 +66,7 @@ class ConversationAgent(BaseAgent):
             )
             
         except Exception as e:
-            self.logger.error(f"Error processing conversation request: {e}")
+            self.logger.error("Error processing conversation request: %s", e)
             return AgentResponse(
                 content="I encountered an error while processing your message. Please try again.",
                 confidence=0.0,
@@ -120,6 +120,6 @@ class ConversationAgent(BaseAgent):
         """Cleanup conversation agent resources"""
         try:
             await self.interaction_model.cleanup()
-            self.logger.info(f"Conversation Agent {self.config.name} cleaned up")
+            self.logger.info("Conversation Agent %s cleaned up", self.config.name)
         except Exception as e:
-            self.logger.error(f"Error during conversation agent cleanup: {e}")
+            self.logger.error("Error during conversation agent cleanup: %s", e)

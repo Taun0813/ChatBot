@@ -24,6 +24,28 @@ logger = setup_logger(__name__)
 # Global router instance
 router_instance = None
 
+
+def _parse_cors_settings() -> tuple[list[str], bool]:
+    """Parse CORS origins from settings and derive safe credential policy."""
+    settings = get_settings()
+    raw_origins = getattr(settings, "cors_allowed_origins", "")
+
+    if isinstance(raw_origins, str) and raw_origins.strip():
+        origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+    elif isinstance(raw_origins, list):
+        origins = [str(origin).strip() for origin in raw_origins if str(origin).strip()]
+    else:
+        origins = [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ]
+
+    # Wildcard origin cannot be combined with credentials in browsers.
+    allow_credentials = "*" not in origins
+    return origins, allow_credentials
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
@@ -99,7 +121,7 @@ async def lifespan(app: FastAPI):
         yield
         
     except Exception as e:
-        logger.error(f"Failed to initialize application: {e}")
+        logger.error("Failed to initialize application: %s", e)
         raise
     finally:
         # Shutdown
@@ -154,10 +176,11 @@ app = FastAPI(
 )
 
 # Add CORS middleware
+cors_origins, cors_allow_credentials = _parse_cors_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -183,7 +206,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     """Response model for chat/ask endpoint"""
-    user_id: str = Field(..., description="User identifier")
+    user_id: Optional[str] = Field(None, description="User identifier")
     response: str = Field(..., description="AI agent response message")
     intent: str = Field(..., description="Detected intent: search, chat, or api_call")
     confidence: float = Field(..., description="Confidence score (0.0-1.0)", ge=0.0, le=1.0)
@@ -242,7 +265,7 @@ async def health_check():
             "timestamp": time.time()
         }
     except Exception as e:
-        logger.error(f"Health check failed: {e}")
+        logger.error("Health check failed: %s", e)
         return {
             "status": "unhealthy",
             "message": f"Health check failed: {str(e)}",
@@ -276,7 +299,7 @@ async def ask(
     - Order inquiry: "Đơn hàng #1234 của tôi ở đâu?"
     """
     try:
-        logger.info(f"Received ask request: {request.message[:100]}...")
+        logger.info("Received ask request: %s...", request.message[:100])
         
         # Build context and propagate auth token from incoming Authorization header
         request_context = dict(request.context or {})
@@ -293,7 +316,7 @@ async def ask(
             intent=request.intent
         )
         
-        logger.info(f"Generated response: {response['response'][:100]}...")
+        logger.info("Generated response: %s...", response["response"][:100])
         
         # Add model info to response metadata
         from config import get_settings
@@ -336,7 +359,7 @@ async def ask(
                 pass
             
         except Exception as e:
-            logger.warning(f"Failed to collect conversation for training: {e}")
+            logger.warning("Failed to collect conversation for training: %s", e)
         
         return ChatResponse(
             user_id=request.user_id,
@@ -348,12 +371,13 @@ async def ask(
         )
         
     except Exception as e:
-        logger.error(f"Error processing ask request: {e}")
+        logger.error("Error processing ask request: %s", e)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.post("/chat", response_model=ChatResponse, tags=["Chat"], deprecated=True)
 async def chat(
     request: ChatRequest,
+    http_request: Request,
     router = Depends(get_router)
 ):
     """
@@ -362,7 +386,7 @@ async def chat(
     **Deprecated**: Please use `/ask` endpoint instead.
     This endpoint is kept for backward compatibility.
     """
-    return await ask(request, router)
+    return await ask(request, http_request, router)
 
 @app.get("/metrics", tags=["Monitoring"])
 async def get_metrics(router = Depends(get_router)):
@@ -383,7 +407,7 @@ async def get_metrics(router = Depends(get_router)):
             "orchestrator_type": "hybrid" if router.enable_hybrid else "rule_based"
         }
     except Exception as e:
-        logger.error(f"Error getting metrics: {e}")
+        logger.error("Error getting metrics: %s", e)
         raise HTTPException(status_code=500, detail=f"Error getting metrics: {str(e)}")
 
 @app.get("/dashboard", tags=["Monitoring"])
@@ -470,7 +494,7 @@ async def get_dashboard(router = Depends(get_router)):
             }
         }
     except Exception as e:
-        logger.error(f"Error getting dashboard: {e}")
+        logger.error("Error getting dashboard: %s", e)
         raise HTTPException(status_code=500, detail=f"Error getting dashboard: {str(e)}")
 
 @app.get("/traces", tags=["Monitoring"])
@@ -492,7 +516,7 @@ async def get_traces(limit: int = 100):
             "count": len(traces)
         }
     except Exception as e:
-        logger.error(f"Error getting traces: {e}")
+        logger.error("Error getting traces: %s", e)
         raise HTTPException(status_code=500, detail=f"Error getting traces: {str(e)}")
 
 # ===========================================
@@ -544,7 +568,7 @@ async def start_training(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error starting training: {e}")
+        logger.error("Error starting training: %s", e)
         raise HTTPException(status_code=500, detail=f"Error starting training: {str(e)}")
 
 @app.get("/training/status", tags=["Training"])
@@ -568,7 +592,7 @@ async def get_training_status():
             }
         
     except Exception as e:
-        logger.error(f"Error getting training status: {e}")
+        logger.error("Error getting training status: %s", e)
         raise HTTPException(status_code=500, detail=f"Error getting training status: {str(e)}")
 
 @app.get("/training/history", tags=["Training"])
@@ -593,7 +617,7 @@ async def get_training_history():
             }
         
     except Exception as e:
-        logger.error(f"Error getting training history: {e}")
+        logger.error("Error getting training history: %s", e)
         raise HTTPException(status_code=500, detail=f"Error getting training history: {str(e)}")
 
 @app.post("/training/collect", tags=["Training"])
@@ -618,7 +642,7 @@ async def collect_conversation(conversation: Dict[str, Any]):
             }
         
     except Exception as e:
-        logger.error(f"Error collecting conversation: {e}")
+        logger.error("Error collecting conversation: %s", e)
         raise HTTPException(status_code=500, detail=f"Error collecting conversation: {str(e)}")
 
 @app.post("/training/auto-retrain", tags=["Training"])
@@ -643,7 +667,7 @@ async def toggle_auto_retrain(enabled: bool = True):
             }
         
     except Exception as e:
-        logger.error(f"Error toggling auto-retrain: {e}")
+        logger.error("Error toggling auto-retrain: %s", e)
         raise HTTPException(status_code=500, detail=f"Error toggling auto-retrain: {str(e)}")
 
 @app.post("/training/prepare-data", tags=["Training"])
@@ -682,27 +706,28 @@ async def prepare_training_data():
         }
         
     except Exception as e:
-        logger.error(f"Error preparing training data: {e}")
+        logger.error("Error preparing training data: %s", e)
         raise HTTPException(status_code=500, detail=f"Error preparing training data: {str(e)}")
 
 @app.post("/training/evaluate", tags=["Training"])
 async def evaluate_model():
     """Evaluate current model"""
     try:
-        from training.evaluate import ModelEvaluator
-        
-        evaluator = ModelEvaluator("training/checkpoints")
+        from training.evaluate import CloudModelEvaluator
+
+        evaluator = CloudModelEvaluator()
         
         # Load test data
         with open("training/dataset/test_conversations.json", 'r', encoding='utf-8') as f:
             test_data = json.load(f)
-        
-        # Load model
-        if not evaluator.load_model("training/checkpoints"):
-            raise HTTPException(status_code=404, detail="Model not found")
-        
+
+        # Initialize configured cloud model backend
+        initialized = await evaluator.initialize_model()
+        if not initialized:
+            raise HTTPException(status_code=503, detail="Model backend initialization failed")
+
         # Evaluate model
-        results = evaluator.evaluate_model(test_data)
+        results = await evaluator.evaluate_model(test_data)
         
         # Save results
         evaluator.save_evaluation_results(results, "training/evaluation_results.json")
@@ -713,8 +738,10 @@ async def evaluate_model():
             "evaluation_results": results
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error evaluating model: {e}")
+        logger.error("Error evaluating model: %s", e)
         raise HTTPException(status_code=500, detail=f"Error evaluating model: {str(e)}")
 
 @app.get("/", tags=["Information"])
@@ -798,7 +825,7 @@ async def get_model_info():
             "timestamp": time.time()
         }
     except Exception as e:
-        logger.error(f"Error getting model info: {e}")
+        logger.error("Error getting model info: %s", e)
         return {
             "status": "error",
             "message": f"Error getting model info: {str(e)}",

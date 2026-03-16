@@ -49,7 +49,7 @@ class MultiModelLoader(BaseModelLoader):
             for model_config in self.model_configs:
                 backend = model_config.get("backend")
                 if not backend:
-                    logger.warning(f"Model config missing backend: {model_config}")
+                    logger.warning("Model config missing backend: %s", model_config)
                     continue
                 
                 # Create model loader
@@ -62,7 +62,7 @@ class MultiModelLoader(BaseModelLoader):
                 elif backend == "openai":
                     model = OpenAILoader(model_config)
                 else:
-                    logger.warning(f"Unsupported backend: {backend}")
+                    logger.warning("Unsupported backend: %s", backend)
                     continue
                 
                 self.models.append({
@@ -77,10 +77,10 @@ class MultiModelLoader(BaseModelLoader):
                     "total_tokens": 0
                 })
             
-            logger.info(f"Initialized {len(self.models)} models")
+            logger.info("Initialized %s models", len(self.models))
             
         except Exception as e:
-            logger.error(f"Failed to initialize models: {e}")
+            logger.error("Failed to initialize models: %s", e)
             raise
     
     async def initialize(self) -> bool:
@@ -94,22 +94,22 @@ class MultiModelLoader(BaseModelLoader):
                     model_info["is_available"] = success
                     if success:
                         success_count += 1
-                        logger.info(f"Model {model_info['config'].get('backend')} initialized successfully")
+                        logger.info("Model %s initialized successfully", model_info["config"].get("backend"))
                     else:
-                        logger.warning(f"Model {model_info['config'].get('backend')} failed to initialize")
+                        logger.warning("Model %s failed to initialize", model_info["config"].get("backend"))
                 except Exception as e:
-                    logger.error(f"Failed to initialize model {model_info['config'].get('backend')}: {e}")
+                    logger.error("Failed to initialize model %s: %s", model_info["config"].get("backend"), e)
                     model_info["is_available"] = False
             
             if success_count == 0:
                 logger.error("No models available")
                 return False
             
-            logger.info(f"Multi-model loader initialized with {success_count}/{len(self.models)} models")
+            logger.info("Multi-model loader initialized with %s/%s models", success_count, len(self.models))
             return True
             
         except Exception as e:
-            logger.error(f"Failed to initialize multi-model loader: {e}")
+            logger.error("Failed to initialize multi-model loader: %s", e)
             return False
     
     async def generate_response(
@@ -157,7 +157,7 @@ class MultiModelLoader(BaseModelLoader):
             return response
             
         except Exception as e:
-            logger.error(f"Failed to generate response: {e}")
+            logger.error("Failed to generate response: %s", e)
             
             # Try fallback if enabled
             if self.fallback_enabled:
@@ -203,7 +203,7 @@ class MultiModelLoader(BaseModelLoader):
                 return available_models[0]
                 
         except Exception as e:
-            logger.error(f"Failed to select model: {e}")
+            logger.error("Failed to select model: %s", e)
             return available_models[0] if available_models else None
     
     def _round_robin_select(self, available_models: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -256,14 +256,14 @@ class MultiModelLoader(BaseModelLoader):
                     return response
                     
                 except Exception as e:
-                    logger.warning(f"Fallback model {model_info['config'].get('backend')} failed: {e}")
+                    logger.warning("Fallback model %s failed: %s", model_info["config"].get("backend"), e)
                     model_info["failure_count"] += 1
                     continue
             
             return "All models failed to generate response"
             
         except Exception as e:
-            logger.error(f"Fallback generation failed: {e}")
+            logger.error("Fallback generation failed: %s", e)
             return f"Fallback error: {str(e)}"
     
     async def cleanup(self):
@@ -273,12 +273,12 @@ class MultiModelLoader(BaseModelLoader):
                 try:
                     await model_info["loader"].cleanup()
                 except Exception as e:
-                    logger.error(f"Error cleaning up model {model_info['config'].get('backend')}: {e}")
+                    logger.error("Error cleaning up model %s: %s", model_info["config"].get("backend"), e)
             
             logger.info("Multi-model loader cleanup completed")
             
         except Exception as e:
-            logger.error(f"Error during multi-model loader cleanup: {e}")
+            logger.error("Error during multi-model loader cleanup: %s", e)
     
     def get_model_info(self) -> Dict[str, Any]:
         """Get multi-model information"""

@@ -78,7 +78,7 @@ class Recommender:
             List of personalized recommendations
         """
         try:
-            logger.info(f"Generating personalized recommendations for user: {user_id}")
+            logger.info("Generating personalized recommendations for user: %s", user_id)
             
             if not search_results:
                 return []
@@ -113,11 +113,11 @@ class Recommender:
                     rec, profile, user_insights
                 )
             
-            logger.info(f"Generated {len(recommendations)} personalized recommendations")
+            logger.info("Generated %s personalized recommendations", len(recommendations))
             return recommendations
             
         except Exception as e:
-            logger.error(f"Failed to generate personalized recommendations: {e}")
+            logger.error("Failed to generate personalized recommendations: %s", e)
             return search_results[:max_recommendations]  # Fallback to original results
     
     async def _calculate_personalization_score(
@@ -159,7 +159,7 @@ class Recommender:
             return max(0.0, min(1.0, final_score))
             
         except Exception as e:
-            logger.error(f"Failed to calculate personalization score: {e}")
+            logger.error("Failed to calculate personalization score: %s", e)
             return product.get("score", 0.5)
     
     async def _calculate_brand_score(
@@ -191,7 +191,7 @@ class Recommender:
             return self.brand_weights.get(product_brand, 0.5)
             
         except Exception as e:
-            logger.error(f"Failed to calculate brand score: {e}")
+            logger.error("Failed to calculate brand score: %s", e)
             return 1.0
     
     async def _calculate_price_score(
@@ -226,7 +226,7 @@ class Recommender:
                 return 0.3
             
         except Exception as e:
-            logger.error(f"Failed to calculate price score: {e}")
+            logger.error("Failed to calculate price score: %s", e)
             return 1.0
     
     async def _calculate_feature_score(
@@ -271,7 +271,7 @@ class Recommender:
             return min(1.0, total_score / len(preferred_features))
             
         except Exception as e:
-            logger.error(f"Failed to calculate feature score: {e}")
+            logger.error("Failed to calculate feature score: %s", e)
             return 1.0
     
     async def _calculate_query_feature_score(
@@ -305,7 +305,7 @@ class Recommender:
             return min(1.0, total_score)
             
         except Exception as e:
-            logger.error(f"Failed to calculate query feature score: {e}")
+            logger.error("Failed to calculate query feature score: %s", e)
             return 1.0
     
     async def _calculate_history_score(
@@ -346,7 +346,7 @@ class Recommender:
             return 1.0
             
         except Exception as e:
-            logger.error(f"Failed to calculate history score: {e}")
+            logger.error("Failed to calculate history score: %s", e)
             return 1.0
     
     async def _calculate_pattern_score(
@@ -383,7 +383,7 @@ class Recommender:
             return 1.0
             
         except Exception as e:
-            logger.error(f"Failed to calculate pattern score: {e}")
+            logger.error("Failed to calculate pattern score: %s", e)
             return 1.0
     
     async def _get_recommendation_reasons(
@@ -445,7 +445,7 @@ class Recommender:
             return reasons[:3]  # Limit to 3 reasons
             
         except Exception as e:
-            logger.error(f"Failed to get recommendation reasons: {e}")
+            logger.error("Failed to get recommendation reasons: %s", e)
             return ["Sản phẩm phù hợp với tìm kiếm của bạn"]
     
     async def get_trending_recommendations(
@@ -461,7 +461,7 @@ class Recommender:
             return []
             
         except Exception as e:
-            logger.error(f"Failed to get trending recommendations: {e}")
+            logger.error("Failed to get trending recommendations: %s", e)
             return []
     
     async def get_collaborative_recommendations(
@@ -476,5 +476,5 @@ class Recommender:
             return []
             
         except Exception as e:
-            logger.error(f"Failed to get collaborative recommendations: {e}")
+            logger.error("Failed to get collaborative recommendations: %s", e)
             return []

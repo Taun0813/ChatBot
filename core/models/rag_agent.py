@@ -21,9 +21,9 @@ class RAGAgent(BaseAgent):
         try:
             await self.rag_model.initialize()
             self.is_initialized = True
-            self.logger.info(f"RAG Agent {self.config.name} initialized")
+            self.logger.info("RAG Agent %s initialized", self.config.name)
         except Exception as e:
-            self.logger.error(f"Failed to initialize RAG Agent: {e}")
+            self.logger.error("Failed to initialize RAG Agent: %s", e)
             raise
     
     async def process(self, request: Dict[str, Any]) -> AgentResponse:
@@ -72,7 +72,7 @@ class RAGAgent(BaseAgent):
             )
             
         except Exception as e:
-            self.logger.error(f"Error processing RAG request: {e}")
+            self.logger.error("Error processing RAG request: %s", e)
             return AgentResponse(
                 content="I encountered an error while searching for information.",
                 confidence=0.0,
@@ -129,16 +129,16 @@ class RAGAgent(BaseAgent):
         """Add documents to RAG system"""
         try:
             await self.rag_model.add_documents(documents)
-            self.logger.info(f"Added {len(documents)} documents to RAG system")
+            self.logger.info("Added %s documents to RAG system", len(documents))
             return True
         except Exception as e:
-            self.logger.error(f"Error adding documents: {e}")
+            self.logger.error("Error adding documents: %s", e)
             return False
     
     async def cleanup(self) -> None:
         """Cleanup RAG agent resources"""
         try:
             await self.rag_model.cleanup()
-            self.logger.info(f"RAG Agent {self.config.name} cleaned up")
+            self.logger.info("RAG Agent %s cleaned up", self.config.name)
         except Exception as e:
-            self.logger.error(f"Error during RAG agent cleanup: {e}")
+            self.logger.error("Error during RAG agent cleanup: %s", e)

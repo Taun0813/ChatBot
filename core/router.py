@@ -109,7 +109,7 @@ class MLRouter:
             logger.info("ML Router initialized successfully")
             
         except Exception as e:
-            logger.error(f"Failed to initialize ML Router: {e}")
+            logger.error("Failed to initialize ML Router: %s", e)
             raise
     
     async def route(self, message: str, context: Dict[str, Any]) -> RoutingDecision:
@@ -146,7 +146,7 @@ class MLRouter:
             )
             
         except Exception as e:
-            logger.error(f"Error in ML routing: {e}")
+            logger.error("Error in ML routing: %s", e)
             processing_time = time.time() - start_time
             return RoutingDecision(
                 intent="chat",
@@ -264,7 +264,7 @@ class ContextAnalyzer:
             try:
                 features[feature_name] = await extractor(message, context)
             except Exception as e:
-                logger.warning(f"Error extracting feature {feature_name}: {e}")
+                logger.warning("Error extracting feature %s: %s", feature_name, e)
                 features[feature_name] = 0.0
         
         return features
@@ -366,7 +366,7 @@ class ConfidenceScorer:
             return min(max(confidence, 0.0), 1.0)
             
         except Exception as e:
-            logger.error(f"Error calculating confidence: {e}")
+            logger.error("Error calculating confidence: %s", e)
             return 0.5
     
     def _calculate_context_consistency(self, context_features: Dict[str, Any]) -> float:
@@ -461,7 +461,7 @@ class DecisionFusionEngine:
             )
             
         except Exception as e:
-            logger.error(f"Error in decision fusion: {e}")
+            logger.error("Error in decision fusion: %s", e)
             processing_time = time.time() - start_time
             
             # Fallback to rule-based decision
@@ -617,7 +617,7 @@ class AgnoRouter:
             logger.info("Agno Router initialized successfully")
             
         except Exception as e:
-            logger.error(f"Failed to initialize Agno Router: {e}")
+            logger.error("Failed to initialize Agno Router: %s", e)
             raise
     
     async def _initialize_pinecone(self):
@@ -638,7 +638,7 @@ class AgnoRouter:
             logger.info("Pinecone client initialized")
             
         except Exception as e:
-            logger.error(f"Failed to initialize Pinecone: {e}")
+            logger.error("Failed to initialize Pinecone: %s", e)
             raise
     
     async def _initialize_cache_manager(self):
@@ -672,7 +672,7 @@ class AgnoRouter:
             logger.info("Cache manager initialized")
             
         except Exception as e:
-            logger.error(f"Failed to initialize cache manager: {e}")
+            logger.error("Failed to initialize cache manager: %s", e)
             # Don't raise - cache is optional
             self.cache_manager = None
     
@@ -695,10 +695,10 @@ class AgnoRouter:
             if not success:
                 raise RuntimeError(f"Model loader failed to initialize: {model_config.get('backend')}")
             
-            logger.info(f"Model loader initialized: {model_config.get('backend')}")
+            logger.info("Model loader initialized: %s", model_config.get("backend"))
             
         except Exception as e:
-            logger.error(f"Failed to initialize model loader: {e}")
+            logger.error("Failed to initialize model loader: %s", e)
             raise
     
     async def _initialize_rag_model(self):
@@ -714,7 +714,7 @@ class AgnoRouter:
             logger.info("RAG model initialized")
             
         except Exception as e:
-            logger.error(f"Failed to initialize RAG model: {e}")
+            logger.error("Failed to initialize RAG model: %s", e)
             raise
     
     async def _initialize_interaction_model(self):
@@ -729,7 +729,7 @@ class AgnoRouter:
             logger.info("Interaction model initialized")
             
         except Exception as e:
-            logger.error(f"Failed to initialize interaction model: {e}")
+            logger.error("Failed to initialize interaction model: %s", e)
             raise
     
     async def _initialize_api_model(self):
@@ -757,7 +757,7 @@ class AgnoRouter:
             logger.info("API model initialized (enable_api_calls=%s)", api_config.get("enable_api_calls", False))
             
         except Exception as e:
-            logger.error(f"Failed to initialize API model: {e}")
+            logger.error("Failed to initialize API model: %s", e)
             raise
     
     async def _initialize_personalization_model(self):
@@ -796,7 +796,7 @@ class AgnoRouter:
             logger.info("Personalization model with Profile Manager and Recommender initialized")
             
         except Exception as e:
-            logger.error(f"Failed to initialize personalization model: {e}")
+            logger.error("Failed to initialize personalization model: %s", e)
             raise
     
     async def process_request(
@@ -821,7 +821,7 @@ class AgnoRouter:
             Response dictionary with response, intent, confidence, metadata
         """
         try:
-            logger.info(f"Processing request: {message[:100]}...")
+            logger.info("Processing request: %s...", message[:100])
             start_time = time.time()
             self.metrics["total_requests"] += 1
             
@@ -876,12 +876,12 @@ class AgnoRouter:
             processing_time = time.time() - start_time
             self._update_metrics(response, processing_time)
             
-            logger.info(f"Generated response: {response['response'][:100]}...")
+            logger.info("Generated response: %s...", response["response"][:100])
             
             return response
             
         except Exception as e:
-            logger.error(f"Error processing request: {e}")
+            logger.error("Error processing request: %s", e)
             return {
                 "response": "Xin lỗi, tôi gặp lỗi khi xử lý yêu cầu của bạn. Vui lòng thử lại sau.",
                 "intent": "error",
@@ -917,7 +917,7 @@ class AgnoRouter:
                 return memory
             return {}
         except Exception as e:
-            logger.warning(f"Failed to load session memory: {e}")
+            logger.warning("Failed to load session memory: %s", e)
             return {}
 
     def _apply_session_memory_to_context(
@@ -1019,7 +1019,7 @@ class AgnoRouter:
                 context={"is_session_data": True},
             )
         except Exception as e:
-            logger.warning(f"Failed to save session memory: {e}")
+            logger.warning("Failed to save session memory: %s", e)
     
     async def _process_hybrid_request(
         self, 
@@ -1064,7 +1064,7 @@ class AgnoRouter:
             return response
             
         except Exception as e:
-            logger.error(f"Error in hybrid processing: {e}")
+            logger.error("Error in hybrid processing: %s", e)
             # Fallback to rule-based
             return await self._process_rule_based_request(message, user_id, session_id, context)
     
@@ -1080,13 +1080,13 @@ class AgnoRouter:
             # Determine handler using rule-based routing
             handler = self._route_request(message)
             
-            logger.info(f"Rule-based routing to handler: {handler}")
+            logger.info("Rule-based routing to handler: %s", handler)
             
             # Process with determined intent
             return await self._process_with_intent(message, handler, user_id, session_id, context)
             
         except Exception as e:
-            logger.error(f"Error in rule-based processing: {e}")
+            logger.error("Error in rule-based processing: %s", e)
             return {
                 "response": "Xin lỗi, tôi gặp lỗi khi xử lý yêu cầu của bạn. Vui lòng thử lại sau.",
                 "intent": "error",
@@ -1116,7 +1116,7 @@ class AgnoRouter:
             )
             
         except Exception as e:
-            logger.error(f"Error in rule-based routing: {e}")
+            logger.error("Error in rule-based routing: %s", e)
             processing_time = time.time() - start_time
             
             return RoutingDecision(
@@ -1168,7 +1168,7 @@ class AgnoRouter:
             # Find first matching rule
             for rule in sorted_rules:
                 if rule.matches(message):
-                    logger.info(f"Matched rule: {rule.name} -> {rule.handler}")
+                    logger.info("Matched rule: %s -> %s", rule.name, rule.handler)
                     return rule.handler
             
             # Default to chat if no rules match
@@ -1176,7 +1176,7 @@ class AgnoRouter:
             return "chat"
             
         except Exception as e:
-            logger.error(f"Error in rule-based routing: {e}")
+            logger.error("Error in rule-based routing: %s", e)
             return "chat"
     
     def _update_metrics(self, response: Dict[str, Any], processing_time: float):
@@ -1420,7 +1420,7 @@ class AgnoRouter:
             return result
                 
         except Exception as e:
-            logger.error(f"Error in search request: {e}")
+            logger.error("Error in search request: %s", e)
             return {
                 "response": "Xin lỗi, tôi không thể tìm kiếm sản phẩm lúc này. Vui lòng thử lại sau.",
                 "intent": "search",
@@ -1452,7 +1452,7 @@ class AgnoRouter:
                     query=query,
                 )
         except Exception as e:
-            logger.warning(f"Background record_user_interaction failed: {e}")
+            logger.warning("Background record_user_interaction failed: %s", e)
     
     async def _handle_search_fallback(
         self,
@@ -1478,7 +1478,7 @@ class AgnoRouter:
                 }
             }
         except Exception as e:
-            logger.warning(f"Search fallback error: {e}")
+            logger.warning("Search fallback error: %s", e)
             return {
                 "response": "Chức năng tìm kiếm sản phẩm chưa được bật. Vui lòng cấu hình RAG_ENABLED=true và chạy init_data.py để load dữ liệu sản phẩm.",
                 "intent": "search",
@@ -1532,7 +1532,7 @@ class AgnoRouter:
             }
             
         except Exception as e:
-            logger.error(f"Error in order request: {e}")
+            logger.error("Error in order request: %s", e)
             return {
                 "response": "Xin lỗi, tôi không thể xử lý yêu cầu đơn hàng lúc này. Vui lòng thử lại sau.",
                 "intent": "order",
@@ -1568,7 +1568,7 @@ class AgnoRouter:
             }
             
         except Exception as e:
-            logger.error(f"Error in API request: {e}")
+            logger.error("Error in API request: %s", e)
             return {
                 "response": "Xin lỗi, tôi không thể xử lý yêu cầu API lúc này. Vui lòng thử lại sau.",
                 "intent": "api",
@@ -1601,7 +1601,7 @@ class AgnoRouter:
             }
             
         except Exception as e:
-            logger.error(f"Error in chat request: {e}")
+            logger.error("Error in chat request: %s", e)
             return {
                 "response": "Xin lỗi, tôi không thể trả lời lúc này. Vui lòng thử lại sau.",
                 "intent": "chat",
@@ -1619,8 +1619,27 @@ class AgnoRouter:
             
             if self.model_loader:
                 await self.model_loader.cleanup()
+
+            if self.api_model:
+                await self.api_model.cleanup()
             
             logger.info("Agno Router cleanup completed")
             
         except Exception as e:
-            logger.error(f"Error during cleanup: {e}")
+            logger.error("Error during cleanup: %s", e)
+
+    async def health_check(self) -> bool:
+        """Basic router health check for monitoring endpoints."""
+        try:
+            if not self.interaction_model or not self.model_loader or not self.api_model:
+                return False
+
+            # If RAG is enabled, both components should be initialized.
+            rag_enabled = bool(self.config.rag_config.get("enabled", False)) if self.config and self.config.rag_config else False
+            if rag_enabled and (not self.rag_model or not self.pinecone_client):
+                return False
+
+            return True
+        except Exception as e:
+            logger.warning("Router health check failed: %s", e)
+            return False

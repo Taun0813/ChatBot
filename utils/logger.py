@@ -127,16 +127,16 @@ def log_performance(logger: AILogger):
     def decorator(func):
         def wrapper(*args, **kwargs):
             start_time = datetime.now()
-            logger.info(f"Starting {func.__name__}")
+            logger.info("Starting %s", func.__name__)
             
             try:
                 result = func(*args, **kwargs)
                 duration = (datetime.now() - start_time).total_seconds()
-                logger.info(f"Completed {func.__name__} in {duration:.2f}s")
+                logger.info("Completed %s in %.2fs", func.__name__, duration)
                 return result
             except Exception as e:
                 duration = (datetime.now() - start_time).total_seconds()
-                logger.error(f"Failed {func.__name__} after {duration:.2f}s: {str(e)}")
+                logger.error("Failed %s after %.2fs: %s", func.__name__, duration, str(e))
                 raise
         
         return wrapper
@@ -148,16 +148,16 @@ def log_async_performance(logger: AILogger):
     def decorator(func):
         async def wrapper(*args, **kwargs):
             start_time = datetime.now()
-            logger.info(f"Starting async {func.__name__}")
+            logger.info("Starting async %s", func.__name__)
             
             try:
                 result = await func(*args, **kwargs)
                 duration = (datetime.now() - start_time).total_seconds()
-                logger.info(f"Completed async {func.__name__} in {duration:.2f}s")
+                logger.info("Completed async %s in %.2fs", func.__name__, duration)
                 return result
             except Exception as e:
                 duration = (datetime.now() - start_time).total_seconds()
-                logger.error(f"Failed async {func.__name__} after {duration:.2f}s: {str(e)}")
+                logger.error("Failed async %s after %.2fs: %s", func.__name__, duration, str(e))
                 raise
         
         return wrapper

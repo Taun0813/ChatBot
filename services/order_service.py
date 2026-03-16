@@ -121,7 +121,7 @@ class OrderService:
             
             self.orders[order_id] = order
             
-            logger.info(f"Created order {order_id} for customer {customer_id}")
+            logger.info("Created order %s for customer %s", order_id, customer_id)
             
             return {
                 "id": order.id,
@@ -141,7 +141,7 @@ class OrderService:
             }
             
         except Exception as e:
-            logger.error(f"Error creating order: {e}")
+            logger.error("Error creating order: %s", e)
             return None
     
     async def get_order_status(self, order_id: str) -> Optional[Dict[str, Any]]:
@@ -161,7 +161,7 @@ class OrderService:
             }
             
         except Exception as e:
-            logger.error(f"Error getting order status: {e}")
+            logger.error("Error getting order status: %s", e)
             return None
     
     async def update_order_status(self, order_id: str, status: str) -> bool:
@@ -175,17 +175,17 @@ class OrderService:
             try:
                 new_status = OrderStatus(status)
             except ValueError:
-                logger.error(f"Invalid order status: {status}")
+                logger.error("Invalid order status: %s", status)
                 return False
             
             order.status = new_status
             order.updated_at = datetime.now()
             
-            logger.info(f"Updated order {order_id} status to {status}")
+            logger.info("Updated order %s status to %s", order_id, status)
             return True
             
         except Exception as e:
-            logger.error(f"Error updating order status: {e}")
+            logger.error("Error updating order status: %s", e)
             return False
     
     async def get_customer_orders(self, customer_id: str, limit: int = 10) -> List[Dict[str, Any]]:
@@ -210,7 +210,7 @@ class OrderService:
             return customer_orders[:limit]
             
         except Exception as e:
-            logger.error(f"Error getting customer orders: {e}")
+            logger.error("Error getting customer orders: %s", e)
             return []
     
     async def cancel_order(self, order_id: str, reason: Optional[str] = None) -> bool:
@@ -222,7 +222,7 @@ class OrderService:
             
             # Only allow cancellation if order is not shipped or delivered
             if order.status in [OrderStatus.SHIPPED, OrderStatus.DELIVERED]:
-                logger.warning(f"Cannot cancel order {order_id} with status {order.status.value}")
+                logger.warning("Cannot cancel order %s with status %s", order_id, order.status.value)
                 return False
             
             order.status = OrderStatus.CANCELLED
@@ -230,11 +230,11 @@ class OrderService:
             if reason:
                 order.notes = f"Cancelled: {reason}"
             
-            logger.info(f"Cancelled order {order_id}")
+            logger.info("Cancelled order %s", order_id)
             return True
             
         except Exception as e:
-            logger.error(f"Error cancelling order: {e}")
+            logger.error("Error cancelling order: %s", e)
             return False
     
     async def get_order_details(self, order_id: str) -> Optional[Dict[str, Any]]:
@@ -266,7 +266,7 @@ class OrderService:
             }
             
         except Exception as e:
-            logger.error(f"Error getting order details: {e}")
+            logger.error("Error getting order details: %s", e)
             return None
     
     async def get_order_stats(self) -> Dict[str, Any]:
@@ -290,7 +290,7 @@ class OrderService:
             }
             
         except Exception as e:
-            logger.error(f"Error getting order stats: {e}")
+            logger.error("Error getting order stats: %s", e)
             return {}
 
 # Global service instance

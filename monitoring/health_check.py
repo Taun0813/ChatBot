@@ -9,8 +9,15 @@ from dataclasses import dataclass
 from enum import Enum
 import psutil
 import json
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def _get_disk_usage_target() -> str:
+    """Return a platform-appropriate disk path for psutil.disk_usage."""
+    anchor = Path.cwd().anchor
+    return anchor or "/"
 
 class HealthStatus(Enum):
     """Health status enumeration"""
@@ -57,7 +64,7 @@ class HealthChecker:
         def wrapped_check():
             return check_func(*args, **kwargs)
         self.custom_checks[name] = wrapped_check
-        self.logger.info(f"Registered health check: {name}")
+        self.logger.info("Registered health check: %s", name)
     
     async def run_all_checks(self) -> Dict[str, HealthCheckResult]:
         """Run all health checks"""
@@ -287,7 +294,7 @@ class HealthChecker:
         """Check disk usage"""
         start_time = time.time()
         
-        disk = psutil.disk_usage('/')
+        disk = psutil.disk_usage(_get_disk_usage_target())
         disk_percent = (disk.used / disk.total) * 100
         
         if disk_percent > self.config.disk_threshold:
@@ -394,7 +401,7 @@ class HealthChecker:
                 await self.run_all_checks()
                 await asyncio.sleep(self.config.check_interval)
             except Exception as e:
-                self.logger.error(f"Error in periodic health checks: {e}")
+                self.logger.error("Error in periodic health checks: %s", e)
                 await asyncio.sleep(self.config.check_interval)
     
     def stop_periodic_checks(self) -> None:

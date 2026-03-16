@@ -605,7 +605,7 @@ def main():
     conversations = []
     
     if Path(dataset_path).exists():
-        logger.info(f"Loading existing dataset from {dataset_path}")
+        logger.info("Loading existing dataset from %s", dataset_path)
         conversations = preparator.load_dataset(dataset_path)
     else:
         logger.info("Loading sample data")

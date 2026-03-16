@@ -79,10 +79,10 @@ class CloudModelEvaluator:
         try:
             self.model_loader = self._get_model_loader()
             await self.model_loader.initialize()
-            logger.info(f"Cloud model {self.model_backend} initialized successfully")
+            logger.info("Cloud model %s initialized successfully", self.model_backend)
             return True
         except Exception as e:
-            logger.error(f"Error initializing model: {e}")
+            logger.error("Error initializing model: %s", e)
             return False
     
     async def generate_response(self, prompt: str, max_tokens: int = 256) -> str:
@@ -100,7 +100,7 @@ class CloudModelEvaluator:
             return response
             
         except Exception as e:
-            logger.error(f"Error generating response: {e}")
+            logger.error("Error generating response: %s", e)
             return ""
     
     def calculate_bleu_score(self, predictions: List[str], references: List[str]) -> float:
@@ -125,7 +125,7 @@ class CloudModelEvaluator:
             logger.warning("NLTK not available for BLEU calculation")
             return 0.0
         except Exception as e:
-            logger.error(f"Error calculating BLEU score: {e}")
+            logger.error("Error calculating BLEU score: %s", e)
             return 0.0
     
     def calculate_rouge_score(self, predictions: List[str], references: List[str]) -> Dict[str, float]:
@@ -151,7 +151,7 @@ class CloudModelEvaluator:
             logger.warning("rouge_score not available for ROUGE calculation")
             return {"rouge-1": 0.0, "rouge-2": 0.0, "rouge-l": 0.0}
         except Exception as e:
-            logger.error(f"Error calculating ROUGE score: {e}")
+            logger.error("Error calculating ROUGE score: %s", e)
             return {"rouge-1": 0.0, "rouge-2": 0.0, "rouge-l": 0.0}
     
     def calculate_intent_accuracy(self, predictions: List[Dict[str, Any]], references: List[Dict[str, Any]]) -> float:
@@ -191,7 +191,7 @@ class CloudModelEvaluator:
             logger.warning("sentence-transformers not available for semantic similarity")
             return 0.0
         except Exception as e:
-            logger.error(f"Error calculating semantic similarity: {e}")
+            logger.error("Error calculating semantic similarity: %s", e)
             return 0.0
     
     def calculate_customer_satisfaction(self, predictions: List[str], references: List[str]) -> float:
@@ -341,7 +341,7 @@ class CloudModelEvaluator:
         # Generate predictions
         start_time = time.time()
         for i, item in enumerate(test_data):
-            logger.info(f"Evaluating sample {i+1}/{len(test_data)}")
+            logger.info("Evaluating sample %s/%s", i + 1, len(test_data))
             
             # Create prompt
             instruction = item.get("instruction", "")
@@ -423,7 +423,7 @@ class CloudModelEvaluator:
         
         self.evaluation_metrics = results
         
-        logger.info(f"Evaluation completed. Results: {results}")
+        logger.info("Evaluation completed. Results: %s", results)
         return results
     
     def save_evaluation_results(self, results: Dict[str, float], output_path: str):
@@ -441,7 +441,7 @@ class CloudModelEvaluator:
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(output_data, f, indent=2, ensure_ascii=False)
         
-        logger.info(f"Evaluation results saved to {output_path}")
+        logger.info("Evaluation results saved to %s", output_path)
     
     def generate_evaluation_report(self, results: Dict[str, float]) -> str:
         """Generate a human-readable evaluation report for e-commerce AI agent"""
@@ -519,7 +519,7 @@ async def main():
     test_data_path = "training/dataset/test_conversations.json"
     
     if not Path(test_data_path).exists():
-        logger.error(f"Test data not found at {test_data_path}")
+        logger.error("Test data not found at %s", test_data_path)
         logger.info("Please run prepare_data.py first to generate test data")
         return
     
@@ -527,7 +527,7 @@ async def main():
     with open(test_data_path, 'r', encoding='utf-8') as f:
         test_data = json.load(f)
     
-    logger.info(f"Loaded {len(test_data)} test samples")
+    logger.info("Loaded %s test samples", len(test_data))
     
     # Create evaluator and initialize model
     evaluator = CloudModelEvaluator(model_backend)
@@ -550,8 +550,8 @@ async def main():
         with open(report_path, 'w', encoding='utf-8') as f:
             f.write(report)
         
-        logger.info(f"Evaluation completed. Results saved to {output_path}")
-        logger.info(f"Report saved to {report_path}")
+        logger.info("Evaluation completed. Results saved to %s", output_path)
+        logger.info("Report saved to %s", report_path)
         
         # Print summary
         print("\n" + "="*60)
@@ -578,7 +578,7 @@ async def main():
         print("="*60)
         
     except Exception as e:
-        logger.error(f"Evaluation failed: {e}")
+        logger.error("Evaluation failed: %s", e)
         raise
     finally:
         # Cleanup

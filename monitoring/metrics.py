@@ -9,8 +9,15 @@ from enum import Enum
 from collections import defaultdict, deque
 import threading
 import json
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def _get_disk_usage_target() -> str:
+    """Return a platform-appropriate disk path for psutil.disk_usage."""
+    anchor = Path.cwd().anchor
+    return anchor or "/"
 
 class MetricType(Enum):
     """Metric type enumeration"""
@@ -204,14 +211,14 @@ class MetricsCollector:
             self.set_gauge("cpu_usage_percent", cpu_percent)
             
             # Disk usage
-            disk = psutil.disk_usage('/')
+            disk = psutil.disk_usage(_get_disk_usage_target())
             disk_percent = (disk.used / disk.total) * 100
             self.set_gauge("disk_usage_percent", disk_percent)
             
         except ImportError:
             self.logger.warning("psutil not available for system metrics")
         except Exception as e:
-            self.logger.error(f"Error updating system metrics: {e}")
+            self.logger.error("Error updating system metrics: %s", e)
     
     def _record_metric(self, metric: MetricData) -> None:
         """Record a metric in history"""

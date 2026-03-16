@@ -91,14 +91,16 @@ class BaseAgent(ABC):
             self._update_average_response_time(processing_time)
             
             self.logger.info(
-                f"Agent {self.config.name} processed request in {processing_time:.2f}s"
+                "Agent %s processed request in %.2fs",
+                self.config.name,
+                processing_time,
             )
             
             return response
             
         except asyncio.TimeoutError:
             self.metrics["failed_requests"] += 1
-            self.logger.error(f"Agent {self.config.name} timed out after {self.config.timeout}s")
+            self.logger.error("Agent %s timed out after %ss", self.config.name, self.config.timeout)
             return AgentResponse(
                 content="Request timed out",
                 confidence=0.0,
@@ -110,7 +112,7 @@ class BaseAgent(ABC):
             
         except Exception as e:
             self.metrics["failed_requests"] += 1
-            self.logger.error(f"Agent {self.config.name} failed: {e}")
+            self.logger.error("Agent %s failed: %s", self.config.name, e)
             return AgentResponse(
                 content="Agent processing failed",
                 confidence=0.0,
@@ -156,12 +158,12 @@ class BaseAgent(ABC):
     def enable(self) -> None:
         """Enable the agent"""
         self.config.enabled = True
-        self.logger.info(f"Agent {self.config.name} enabled")
+        self.logger.info("Agent %s enabled", self.config.name)
     
     def disable(self) -> None:
         """Disable the agent"""
         self.config.enabled = False
-        self.logger.info(f"Agent {self.config.name} disabled")
+        self.logger.info("Agent %s disabled", self.config.name)
     
     def reset_metrics(self) -> None:
         """Reset agent metrics"""
@@ -171,4 +173,4 @@ class BaseAgent(ABC):
             "failed_requests": 0,
             "average_response_time": 0.0
         }
-        self.logger.info(f"Agent {self.config.name} metrics reset")
+        self.logger.info("Agent %s metrics reset", self.config.name)

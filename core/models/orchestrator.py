@@ -39,13 +39,13 @@ class AgentOrchestrator:
             self.is_initialized = True
             self.logger.info("Agent Orchestrator initialized successfully")
         except Exception as e:
-            self.logger.error(f"Failed to initialize orchestrator: {e}")
+            self.logger.error("Failed to initialize orchestrator: %s", e)
             raise
     
     def register_agent(self, name: str, agent: BaseAgent) -> None:
         """Register an agent with the orchestrator"""
         self.agents[name] = agent
-        self.logger.info(f"Registered agent: {name}")
+        self.logger.info("Registered agent: %s", name)
     
     async def process_request(
         self, 
@@ -70,7 +70,7 @@ class AgentOrchestrator:
                 return await self._process_multiple_agents(agents_to_use, request)
                 
         except Exception as e:
-            self.logger.error(f"Error processing request: {e}")
+            self.logger.error("Error processing request: %s", e)
             return self._create_error_response(str(e))
     
     def _select_agents(self, request: Dict[str, Any], preference: Optional[str] = None) -> List[str]:
@@ -139,7 +139,7 @@ class AgentOrchestrator:
             return self._combine_responses(responses, agent_names)
             
         except Exception as e:
-            self.logger.error(f"Error in parallel processing: {e}")
+            self.logger.error("Error in parallel processing: %s", e)
             return self._create_error_response(str(e))
     
     async def _process_sequential(
@@ -163,7 +163,7 @@ class AgentOrchestrator:
             return self._combine_responses(responses, agent_names)
             
         except Exception as e:
-            self.logger.error(f"Error in sequential processing: {e}")
+            self.logger.error("Error in sequential processing: %s", e)
             return self._create_error_response(str(e))
     
     def _combine_responses(
@@ -258,13 +258,13 @@ class AgentOrchestrator:
             for name, agent in self.agents.items():
                 try:
                     await agent.cleanup()
-                    self.logger.info(f"Cleaned up agent: {name}")
+                    self.logger.info("Cleaned up agent: %s", name)
                 except Exception as e:
-                    self.logger.error(f"Error cleaning up agent {name}: {e}")
+                    self.logger.error("Error cleaning up agent %s: %s", name, e)
             
             self.agents.clear()
             self.is_initialized = False
             self.logger.info("Agent Orchestrator cleanup completed")
             
         except Exception as e:
-            self.logger.error(f"Error during orchestrator cleanup: {e}")
+            self.logger.error("Error during orchestrator cleanup: %s", e)

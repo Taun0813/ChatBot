@@ -37,11 +37,11 @@ class DataIngestion:
                 if success:
                     success_count += 1
             
-            logger.info(f"Successfully ingested {success_count}/{len(mock_products)} products")
+            logger.info("Successfully ingested %s/%s products", success_count, len(mock_products))
             return success_count > 0
             
         except Exception as e:
-            logger.error(f"Failed to ingest mock products: {e}")
+            logger.error("Failed to ingest mock products: %s", e)
             return False
     
     def _generate_mock_products(self) -> List[Dict[str, Any]]:
@@ -184,7 +184,7 @@ class DataIngestion:
             }
             
         except Exception as e:
-            logger.error(f"Error converting product {index}: {e}")
+            logger.error("Error converting product %s: %s", index, e)
             # Return a basic product if conversion fails
             return {
                 "id": f"product_{index}",

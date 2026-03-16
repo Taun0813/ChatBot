@@ -96,7 +96,7 @@ class ProfileManager:
             logger.info("Profile database initialized successfully")
             
         except Exception as e:
-            logger.error(f"Failed to initialize database: {e}")
+            logger.error("Failed to initialize database: %s", e)
             raise
     
     async def get_user_profile(self, user_id: str) -> Dict[str, Any]:
@@ -135,7 +135,7 @@ class ProfileManager:
                 return await self._create_new_profile(user_id)
                 
         except Exception as e:
-            logger.error(f"Failed to get user profile: {e}")
+            logger.error("Failed to get user profile: %s", e)
             return self._get_default_profile()
     
     async def _create_new_profile(self, user_id: str) -> Dict[str, Any]:
@@ -171,11 +171,11 @@ class ProfileManager:
             if self.json_backup:
                 await self._save_profile_to_json(profile)
             
-            logger.info(f"Created new profile for user: {user_id}")
+            logger.info("Created new profile for user: %s", user_id)
             return profile
             
         except Exception as e:
-            logger.error(f"Failed to create new profile: {e}")
+            logger.error("Failed to create new profile: %s", e)
             return self._get_default_profile()
     
     async def update_user_preferences(
@@ -200,11 +200,11 @@ class ProfileManager:
             if self.json_backup:
                 await self._save_profile_to_json(profile)
             
-            logger.info(f"Updated preferences for user: {user_id}")
+            logger.info("Updated preferences for user: %s", user_id)
             return True
             
         except Exception as e:
-            logger.error(f"Failed to update user preferences: {e}")
+            logger.error("Failed to update user preferences: %s", e)
             return False
     
     async def record_query(
@@ -253,7 +253,7 @@ class ProfileManager:
             return True
             
         except Exception as e:
-            logger.error(f"Failed to record query: {e}")
+            logger.error("Failed to record query: %s", e)
             return False
     
     async def record_interaction(
@@ -306,7 +306,7 @@ class ProfileManager:
             return True
             
         except Exception as e:
-            logger.error(f"Failed to record interaction: {e}")
+            logger.error("Failed to record interaction: %s", e)
             return False
     
     async def _update_profile_from_interaction(
@@ -348,7 +348,7 @@ class ProfileManager:
                     profile["profile_data"]["ratings"] = ratings
             
         except Exception as e:
-            logger.error(f"Failed to update profile from interaction: {e}")
+            logger.error("Failed to update profile from interaction: %s", e)
     
     async def get_user_insights(self, user_id: str) -> Dict[str, Any]:
         """Get user insights for personalization"""
@@ -368,7 +368,7 @@ class ProfileManager:
             return insights
             
         except Exception as e:
-            logger.error(f"Failed to get user insights: {e}")
+            logger.error("Failed to get user insights: %s", e)
             return {}
     
     def _extract_favorite_brands(self, profile: Dict[str, Any]) -> List[str]:
@@ -430,7 +430,7 @@ class ProfileManager:
             }
             
         except Exception as e:
-            logger.error(f"Failed to analyze search patterns: {e}")
+            logger.error("Failed to analyze search patterns: %s", e)
             return {}
     
     def _analyze_purchase_patterns(self, profile: Dict[str, Any]) -> Dict[str, Any]:
@@ -448,7 +448,7 @@ class ProfileManager:
             }
             
         except Exception as e:
-            logger.error(f"Failed to analyze purchase patterns: {e}")
+            logger.error("Failed to analyze purchase patterns: %s", e)
             return {}
     
     async def _save_profile_to_db(self, profile: Dict[str, Any]) -> bool:
@@ -479,7 +479,7 @@ class ProfileManager:
             return True
             
         except Exception as e:
-            logger.error(f"Failed to save profile to database: {e}")
+            logger.error("Failed to save profile to database: %s", e)
             return False
     
     async def _save_profile_to_json(self, profile: Dict[str, Any]) -> bool:
@@ -493,7 +493,7 @@ class ProfileManager:
             return True
             
         except Exception as e:
-            logger.error(f"Failed to save profile to JSON: {e}")
+            logger.error("Failed to save profile to JSON: %s", e)
             return False
     
     async def _update_last_accessed(self, user_id: str) -> bool:
@@ -512,7 +512,7 @@ class ProfileManager:
             return True
             
         except Exception as e:
-            logger.error(f"Failed to update last accessed: {e}")
+            logger.error("Failed to update last accessed: %s", e)
             return False
     
     def _get_default_profile(self) -> Dict[str, Any]:

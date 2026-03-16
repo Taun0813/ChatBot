@@ -38,24 +38,43 @@ class RAGModel:
         """Initialize RAG model components"""
         try:
             logger.info("Initializing RAG model with Pinecone Cloud embeddings...")
-            logger.info(f"Embedding model: {self.embedding_model_name}")
+            logger.info("Embedding model: %s", self.embedding_model_name)
             logger.info("RAG model initialized successfully")
         except Exception as e:
-            logger.error(f"Failed to initialize RAG model: {e}")
+            logger.error("Failed to initialize RAG model: %s", e)
             raise
     
-    async def _generate_embedding(self, text: str) -> List[float]:
-        """Generate embedding via Pinecone managed model"""
+    async def _generate_embedding(self, text: str, input_type: str = "query") -> List[float]:
+        """Generate embedding via Pinecone managed model.
+
+        Uses query mode for retrieval by default and falls back to passage mode
+        if provider/model rejects the requested input_type.
+        """
         try:
             pc = self.pinecone_client.pc  # đã khởi tạo từ adapters/pinecone_client
-            response = pc.inference.embed(
-                model=self.embedding_model_name,
-                inputs=[text],
-                parameters={"input_type": "passage"}
-            )
+            try:
+                response = pc.inference.embed(
+                    model=self.embedding_model_name,
+                    inputs=[text],
+                    parameters={"input_type": input_type}
+                )
+            except Exception as primary_error:
+                if input_type != "passage":
+                    logger.warning(
+                        "Embedding input_type '%s' failed (%s), fallback to 'passage'",
+                        input_type,
+                        primary_error,
+                    )
+                    response = pc.inference.embed(
+                        model=self.embedding_model_name,
+                        inputs=[text],
+                        parameters={"input_type": "passage"}
+                    )
+                else:
+                    raise
             return response[0].values  # 1 vector (1024-dim)
         except Exception as e:
-            logger.error(f"Failed to generate embedding: {e}")
+            logger.error("Failed to generate embedding: %s", e)
             raise
     
     async def search_products(
@@ -71,7 +90,7 @@ class RAGModel:
     ) -> List[Dict[str, Any]]:
         """Search for products using RAG"""
         try:
-            logger.info(f"Searching products for query: {query}")
+            logger.info("Searching products for query: %s", query)
 
             # Extract metadata from query
             extracted_metadata = await self._extract_metadata_from_query(query)
@@ -84,7 +103,7 @@ class RAGModel:
             effective_live_only = self.rag_live_only if live_only is None else bool(live_only)
 
             # Generate query embedding
-            query_embedding = await self._generate_embedding(query)
+            query_embedding = await self._generate_embedding(query, input_type="query")
 
             # Search in Pinecone
             search_results = await self.pinecone_client.search_products(
@@ -129,11 +148,11 @@ class RAGModel:
                 if final_specs and any(spec in final_specs for spec in ['pin', 'camera', 'chơi game']):
                     products = await self._filter_by_specs(products, final_specs)
             
-            logger.info(f"Found {len(products)} products")
+            logger.info("Found %s products", len(products))
             return products
             
         except Exception as e:
-            logger.error(f"Failed to search products: {e}")
+            logger.error("Failed to search products: %s", e)
             raise
     
     async def _process_search_results(
@@ -159,7 +178,7 @@ class RAGModel:
                             if ':' in item:
                                 key, val = item.split(':', 1)
                                 parsed_specs[key.strip()] = val.strip()
-                    except:
+                    except Exception:
                         parsed_specs = specs
                     specs = parsed_specs
 
@@ -192,7 +211,7 @@ class RAGModel:
             return products
 
         except Exception as e:
-            logger.error(f"Failed to process search results: {e}")
+            logger.error("Failed to process search results: %s", e)
             raise
 
     async def _calculate_relevance_score(
@@ -239,7 +258,7 @@ class RAGModel:
                 parts.append(f"... và {len(products) - 3} sản phẩm khác")
             return "\n".join(parts)
         except Exception as e:
-            logger.error(f"Failed to generate product summary: {e}")
+            logger.error("Failed to generate product summary: %s", e)
             return "Có lỗi khi tạo tóm tắt sản phẩm."
 
     async def upsert_product(
@@ -250,10 +269,10 @@ class RAGModel:
     ) -> bool:
         """Upsert product to vector database"""
         try:
-            logger.info(f"Upserting product: {product_id}")
+            logger.info("Upserting product: %s", product_id)
 
             product_text = self._create_product_text(product_data)
-            embedding = await self._generate_embedding(product_text)
+            embedding = await self._generate_embedding(product_text, input_type="passage")
             product_url, specs_url = self._build_product_urls(product_id, product_data)
 
             vector_data = {
@@ -282,10 +301,10 @@ class RAGModel:
             }
 
             await self.pinecone_client.upsert_vectors([vector_data], namespace=namespace)
-            logger.info(f"Successfully upserted product: {product_id}")
+            logger.info("Successfully upserted product: %s", product_id)
             return True
         except Exception as e:
-            logger.error(f"Failed to upsert product: {e}")
+            logger.error("Failed to upsert product: %s", e)
             return False
 
     def _create_product_text(self, product_data: Dict[str, Any]) -> str:
@@ -370,13 +389,13 @@ class RAGModel:
                         # Min price: trên X hoặc X trở lên
                         min_price = int(match.group(1)) * 1000000
                         metadata["price_range"] = (min_price, 999999999)  # Large finite value
-                        logger.info(f"Extracted 'trên' price - min: {min_price}, max: 999999999")
+                        logger.info("Extracted 'trên' price - min: %s, max: 999999999", min_price)
                     elif pattern_type == 'approx':
                         # Approximate price: khoảng X
                         price = int(match.group(1)) * 1000000
                         tolerance = price * 0.2  # 20% tolerance
                         metadata["price_range"] = (price - tolerance, price + tolerance)
-                    logger.info(f"Extracted price range from query: {metadata['price_range']}")
+                    logger.info("Extracted price range from query: %s", metadata["price_range"])
                     break
             
             # Extract brand (with basic synonym mapping, e.g. "iphone" -> "Apple")
@@ -395,7 +414,7 @@ class RAGModel:
                 if brand in query_lower:
                     normalized_brand = brand_synonyms.get(brand, brand.title())
                     metadata["brand"] = normalized_brand
-                    logger.info(f"Extracted brand from query: {metadata['brand']}")
+                    logger.info("Extracted brand from query: %s", metadata["brand"])
                     break
             
             # Extract specs
@@ -414,15 +433,15 @@ class RAGModel:
                 if match:
                     if spec in ['ram', 'rom', 'màn hình']:
                         metadata["specs"][spec] = match.group(1)
-                        logger.info(f"Extracted {spec} from query: {match.group(1)}")
+                        logger.info("Extracted %s from query: %s", spec, match.group(1))
                     else:
                         metadata["specs"][spec] = True
-                        logger.info(f"Extracted {spec} requirement from query")
+                        logger.info("Extracted %s requirement from query", spec)
             
             return metadata
             
         except Exception as e:
-            logger.error(f"Failed to extract metadata from query: {e}")
+            logger.error("Failed to extract metadata from query: %s", e)
             return {}
     
     async def _filter_by_specs(self, products: List[Dict[str, Any]], specs: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -486,7 +505,7 @@ class RAGModel:
             return filtered_products
             
         except Exception as e:
-            logger.error(f"Failed to filter by specs: {e}")
+            logger.error("Failed to filter by specs: %s", e)
             return products
 
     def _filter_by_brand(self, products: List[Dict[str, Any]], brand: str) -> List[Dict[str, Any]]:
