@@ -13,6 +13,8 @@ import logging
 import time
 import json
 from contextlib import asynccontextmanager
+from collections import defaultdict, deque
+from threading import Lock
 
 # Import sẽ được thực hiện trong runtime để tránh circular import
 from config import get_settings
@@ -23,6 +25,232 @@ logger = setup_logger(__name__)
 
 # Global router instance
 router_instance = None
+
+TRANSACTION_INTENTS = {
+    "order",
+    "shipping",
+    "payment",
+    "warranty",
+    "cart",
+    "checkout",
+    "refund",
+    "return",
+}
+
+API_BACKED_INTENTS = {"order", "shipping", "payment", "warranty", "cart", "api"}
+
+INTENT_ALIASES = {
+    "api_call": "api",
+    "product_search": "search",
+    "order_inquiry": "order",
+    "payment_question": "payment",
+    "warranty_inquiry": "warranty",
+    "shipping_inquiry": "shipping",
+    "cart_management": "cart",
+    "checkout_request": "checkout",
+    "refund_request": "refund",
+    "return_request": "return",
+}
+
+TRANSACTION_KEYWORDS = [
+    "giỏ hàng", "cart", "checkout", "chốt đơn", "đặt hàng", "thanh toán", "payment",
+    "đơn hàng", "vận chuyển", "shipping", "tracking", "bảo hành", "refund", "hoàn tiền",
+    "đổi trả", "trả hàng", "return",
+]
+
+
+class InMemoryRateLimiter:
+    """Simple sliding-window rate limiter for transaction-like requests."""
+
+    def __init__(self, max_requests: int = 20, window_seconds: int = 60):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self._events: Dict[str, deque[float]] = defaultdict(deque)
+        self._lock = Lock()
+
+    def allow(self, key: str) -> tuple[bool, int]:
+        now = time.time()
+        with self._lock:
+            bucket = self._events[key]
+            while bucket and now - bucket[0] > self.window_seconds:
+                bucket.popleft()
+
+            if len(bucket) >= self.max_requests:
+                retry_after = int(max(1, self.window_seconds - (now - bucket[0])))
+                return False, retry_after
+
+            bucket.append(now)
+            return True, 0
+
+
+class IdempotencyStore:
+    """In-memory idempotency key store for transaction requests."""
+
+    def __init__(self):
+        self._store: Dict[str, tuple[float, Dict[str, Any]]] = {}
+        self._lock = Lock()
+
+    def get(self, key: str) -> Optional[Dict[str, Any]]:
+        now = time.time()
+        with self._lock:
+            record = self._store.get(key)
+            if not record:
+                return None
+
+            expires_at, payload = record
+            if now > expires_at:
+                del self._store[key]
+                return None
+
+            return dict(payload)
+
+    def set(self, key: str, payload: Dict[str, Any], ttl_seconds: int = 3600) -> None:
+        with self._lock:
+            self._store[key] = (time.time() + ttl_seconds, dict(payload))
+
+
+class GuardrailMonitor:
+    """Tracks rolling quality signals and emits alert events."""
+
+    def __init__(
+        self,
+        rolling_window: int = 100,
+        intent_error_threshold: float = 0.25,
+        api_timeout_threshold_ms: int = 5000,
+        api_timeout_ratio_threshold: float = 0.2,
+        alert_cooldown_seconds: int = 30,
+    ):
+        self.rolling_window = rolling_window
+        self.intent_error_threshold = intent_error_threshold
+        self.api_timeout_threshold_ms = api_timeout_threshold_ms
+        self.api_timeout_ratio_threshold = api_timeout_ratio_threshold
+        self.alert_cooldown_seconds = alert_cooldown_seconds
+
+        self._intent_results: Dict[str, deque[int]] = defaultdict(lambda: deque(maxlen=self.rolling_window))
+        self._api_timeout_results: deque[int] = deque(maxlen=self.rolling_window)
+        self._alerts: deque[Dict[str, Any]] = deque(maxlen=200)
+        self._last_alert_at: Dict[str, float] = {}
+        self._lock = Lock()
+
+    def record(self, intent: str, is_error: bool, latency_ms: float, is_api: bool) -> None:
+        now = time.time()
+        with self._lock:
+            self._intent_results[intent].append(1 if is_error else 0)
+            if is_api:
+                timeout_hit = 1 if latency_ms >= self.api_timeout_threshold_ms else 0
+                self._api_timeout_results.append(timeout_hit)
+
+            self._check_intent_error_alert(now)
+            self._check_api_timeout_alert(now)
+
+    def _check_intent_error_alert(self, now: float) -> None:
+        for intent, events in self._intent_results.items():
+            if len(events) < 10:
+                continue
+            error_rate = sum(events) / len(events)
+            if error_rate >= self.intent_error_threshold:
+                key = f"intent_error:{intent}"
+                self._push_alert(
+                    key=key,
+                    now=now,
+                    payload={
+                        "type": "intent_error_rate",
+                        "intent": intent,
+                        "error_rate": round(error_rate, 4),
+                        "window": len(events),
+                        "threshold": self.intent_error_threshold,
+                    },
+                )
+
+    def _check_api_timeout_alert(self, now: float) -> None:
+        if len(self._api_timeout_results) < 10:
+            return
+
+        timeout_ratio = sum(self._api_timeout_results) / len(self._api_timeout_results)
+        if timeout_ratio >= self.api_timeout_ratio_threshold:
+            self._push_alert(
+                key="api_timeout_ratio",
+                now=now,
+                payload={
+                    "type": "api_timeout_ratio",
+                    "timeout_ratio": round(timeout_ratio, 4),
+                    "window": len(self._api_timeout_results),
+                    "threshold": self.api_timeout_ratio_threshold,
+                    "timeout_threshold_ms": self.api_timeout_threshold_ms,
+                },
+            )
+
+    def _push_alert(self, key: str, now: float, payload: Dict[str, Any]) -> None:
+        last_alert = self._last_alert_at.get(key, 0)
+        if now - last_alert < self.alert_cooldown_seconds:
+            return
+
+        payload = dict(payload)
+        payload["timestamp"] = now
+        self._alerts.append(payload)
+        self._last_alert_at[key] = now
+        logger.warning("Guardrail alert triggered: %s", payload)
+
+    def snapshot(self) -> Dict[str, Any]:
+        with self._lock:
+            intent_error_rates = {}
+            for intent, events in self._intent_results.items():
+                if events:
+                    intent_error_rates[intent] = {
+                        "error_rate": round(sum(events) / len(events), 4),
+                        "window": len(events),
+                    }
+
+            timeout_ratio = 0.0
+            if self._api_timeout_results:
+                timeout_ratio = round(sum(self._api_timeout_results) / len(self._api_timeout_results), 4)
+
+            return {
+                "intent_error_rates": intent_error_rates,
+                "api_timeout_ratio": {
+                    "ratio": timeout_ratio,
+                    "window": len(self._api_timeout_results),
+                    "threshold": self.api_timeout_ratio_threshold,
+                    "timeout_threshold_ms": self.api_timeout_threshold_ms,
+                },
+                "alerts": list(self._alerts),
+            }
+
+
+def _normalize_intent(intent: Optional[str]) -> str:
+    normalized = (intent or "").strip().lower()
+    if not normalized:
+        return ""
+    return INTENT_ALIASES.get(normalized, normalized)
+
+
+def _looks_transactional(message: str) -> bool:
+    text = (message or "").strip().lower()
+    if not text:
+        return False
+    return any(keyword in text for keyword in TRANSACTION_KEYWORDS)
+
+
+def _client_identifier(http_request: Request, user_id: Optional[str]) -> str:
+    if user_id:
+        return f"user:{user_id}"
+
+    xff = http_request.headers.get("x-forwarded-for", "")
+    if xff:
+        ip = xff.split(",")[0].strip()
+        if ip:
+            return f"ip:{ip}"
+
+    client = getattr(http_request, "client", None)
+    host = getattr(client, "host", None)
+    if host:
+        return f"ip:{host}"
+    return "ip:unknown"
+
+
+transaction_rate_limiter = InMemoryRateLimiter(max_requests=20, window_seconds=60)
+transaction_idempotency_store = IdempotencyStore()
+guardrail_monitor = GuardrailMonitor()
 
 
 def _parse_cors_settings() -> tuple[list[str], bool]:
@@ -89,6 +317,7 @@ async def lifespan(app: FastAPI):
                 "payment_service_url": settings.payment_service_url,
                 "warranty_service_url": settings.warranty_service_url,
                 "product_service_url": settings.product_service_url,
+                "cart_service_url": settings.cart_service_url,
                 "jwt_token": settings.jwt_token,
                 "order_service_api_key": settings.order_service_api_key,
                 "payment_service_api_key": settings.payment_service_api_key,
@@ -192,7 +421,14 @@ class ChatRequest(BaseModel):
     user_id: Optional[str] = Field(None, description="Unique user identifier", example="user123")
     session_id: Optional[str] = Field(None, description="Session identifier for conversation context", example="session001")
     context: Optional[Dict[str, Any]] = Field(None, description="Additional context for the request")
-    intent: Optional[str] = Field(None, description="Pre-specified intent: search, chat, or api_call", example="search")
+    intent: Optional[str] = Field(
+        None,
+        description=(
+            "Optional pre-specified intent. Supported values: "
+            "search, chat, order, shipping, payment, warranty, cart, checkout, refund, return, api_call"
+        ),
+        example="search"
+    )
     
     class Config:
         json_schema_extra = {
@@ -208,9 +444,21 @@ class ChatResponse(BaseModel):
     """Response model for chat/ask endpoint"""
     user_id: Optional[str] = Field(None, description="User identifier")
     response: str = Field(..., description="AI agent response message")
-    intent: str = Field(..., description="Detected intent: search, chat, or api_call")
+    intent: str = Field(
+        ...,
+        description=(
+            "Detected intent. Possible values: "
+            "search, chat, order, shipping, payment, warranty, cart, checkout, refund, return, api_call"
+        )
+    )
     confidence: float = Field(..., description="Confidence score (0.0-1.0)", ge=0.0, le=1.0)
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata about the response")
+    metadata: Optional[Dict[str, Any]] = Field(
+        None,
+        description=(
+            "Additional response metadata. Common keys: model_info, flow, action_required, "
+            "grounding (citations/evidence for product-grounded answers)."
+        )
+    )
     session_id: Optional[str] = Field(None, description="Session identifier")
     
     class Config:
@@ -222,6 +470,19 @@ class ChatResponse(BaseModel):
                 "confidence": 0.95,
                 "session_id": "session001",
                 "metadata": {
+                    "flow": "search",
+                    "grounding": {
+                        "grounded": True,
+                        "citations": [
+                            {
+                                "product_id": "mobile_oneplus_12_256gb_black",
+                                "name": "OnePlus 12 256GB",
+                                "price_vnd": 23990000,
+                                "source": "products_export",
+                                "source_id": "12345"
+                            }
+                        ]
+                    },
                     "model_info": {
                         "backend": "gemini",
                         "model_name": "gemini-2.5-flash"
@@ -289,9 +550,9 @@ async def ask(
     **Process Flow:**
     1. User message is received
     2. Hybrid Orchestrator analyzes the message
-    3. Intent is detected (search, chat, or api_call)
+    3. Intent is detected (search, chat, order, shipping, payment, warranty, cart, checkout, refund, return, or api_call)
     4. Appropriate agent processes the request
-    5. Response is generated and returned
+    5. Response is generated and returned with structured metadata (for example: flow, grounding, action_required)
     
     **Example Use Cases:**
     - Product search: "Tìm điện thoại Samsung dưới 20 triệu"
@@ -299,7 +560,42 @@ async def ask(
     - Order inquiry: "Đơn hàng #1234 của tôi ở đâu?"
     """
     try:
+        request_start = time.time()
         logger.info("Received ask request: %s...", request.message[:100])
+
+        normalized_requested_intent = _normalize_intent(request.intent)
+        is_transaction_like = normalized_requested_intent in TRANSACTION_INTENTS or _looks_transactional(request.message)
+        client_key = _client_identifier(http_request, request.user_id)
+        idempotency_key = None
+        idempotency_store_key = None
+
+        if is_transaction_like:
+            allowed, retry_after = transaction_rate_limiter.allow(client_key)
+            if not allowed:
+                raise HTTPException(
+                    status_code=429,
+                    detail={
+                        "message": "Rate limit exceeded for transaction requests",
+                        "retry_after_seconds": retry_after,
+                    },
+                )
+
+            idempotency_key = (http_request.headers.get("idempotency-key") or "").strip()
+            if not idempotency_key:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Missing Idempotency-Key header for transaction request",
+                )
+
+            idempotency_store_key = f"{client_key}:{normalized_requested_intent or 'transaction'}:{idempotency_key}"
+            replay_payload = transaction_idempotency_store.get(idempotency_store_key)
+            if replay_payload:
+                replay_payload.setdefault("metadata", {})
+                replay_payload["metadata"]["idempotency"] = {
+                    "replayed": True,
+                    "key": idempotency_key,
+                }
+                return ChatResponse(**replay_payload)
         
         # Build context and propagate auth token from incoming Authorization header
         request_context = dict(request.context or {})
@@ -324,6 +620,29 @@ async def ask(
         
         if "metadata" not in response:
             response["metadata"] = {}
+
+        response_intent = _normalize_intent(response.get("intent"))
+        duration_ms = (time.time() - request_start) * 1000.0
+        response_metadata = response.get("metadata", {})
+        is_api_intent = response_intent in API_BACKED_INTENTS
+        is_error_response = (
+            response_intent == "error"
+            or bool(response_metadata.get("error"))
+            or response.get("confidence", 1.0) <= 0.0
+        )
+
+        guardrail_monitor.record(
+            intent=response_intent or "unknown",
+            is_error=is_error_response,
+            latency_ms=duration_ms,
+            is_api=is_api_intent,
+        )
+
+        if is_transaction_like:
+            response["metadata"]["idempotency"] = {
+                "replayed": False,
+                "key": idempotency_key,
+            }
         
         response["metadata"]["model_info"] = {
             "backend": settings.model_loader_backend,
@@ -332,6 +651,14 @@ async def ask(
             "temperature": settings.temperature,
             "top_p": settings.top_p
         }
+
+        if response_intent in API_BACKED_INTENTS and duration_ms >= guardrail_monitor.api_timeout_threshold_ms:
+            logger.warning(
+                "Potential API timeout breach: intent=%s duration_ms=%.2f threshold_ms=%s",
+                response_intent,
+                duration_ms,
+                guardrail_monitor.api_timeout_threshold_ms,
+            )
         
         # Collect conversation for training (async)
         # Note: Training pipeline is optional and may not be available
@@ -361,7 +688,7 @@ async def ask(
         except Exception as e:
             logger.warning("Failed to collect conversation for training: %s", e)
         
-        return ChatResponse(
+        chat_response = ChatResponse(
             user_id=request.user_id,
             response=response["response"],
             intent=response["intent"],
@@ -369,6 +696,22 @@ async def ask(
             metadata=response.get("metadata"),
             session_id=response.get("session_id")
         )
+
+        if is_transaction_like and idempotency_store_key:
+            transaction_idempotency_store.set(
+                idempotency_store_key,
+                {
+                    "user_id": chat_response.user_id,
+                    "response": chat_response.response,
+                    "intent": chat_response.intent,
+                    "confidence": chat_response.confidence,
+                    "metadata": chat_response.metadata,
+                    "session_id": chat_response.session_id,
+                },
+                ttl_seconds=3600,
+            )
+
+        return chat_response
         
     except Exception as e:
         logger.error("Error processing ask request: %s", e)
@@ -518,6 +861,38 @@ async def get_traces(limit: int = 100):
     except Exception as e:
         logger.error("Error getting traces: %s", e)
         raise HTTPException(status_code=500, detail=f"Error getting traces: {str(e)}")
+
+
+@app.get("/guardrails/stats", tags=["Monitoring"])
+async def get_guardrail_stats():
+    """Get guardrail quality and protection statistics."""
+    snapshot = guardrail_monitor.snapshot()
+    snapshot["rate_limit"] = {
+        "window_seconds": transaction_rate_limiter.window_seconds,
+        "max_requests": transaction_rate_limiter.max_requests,
+        "scope": "transaction_like_requests",
+    }
+    snapshot["idempotency"] = {
+        "enabled": True,
+        "scope": "transaction_like_requests",
+    }
+    return {
+        "status": "success",
+        "guardrails": snapshot,
+        "timestamp": time.time(),
+    }
+
+
+@app.get("/guardrails/alerts", tags=["Monitoring"])
+async def get_guardrail_alerts():
+    """Get rolling guardrail alerts for intent error-rate and API timeout ratio."""
+    snapshot = guardrail_monitor.snapshot()
+    return {
+        "status": "success",
+        "alerts": snapshot.get("alerts", []),
+        "count": len(snapshot.get("alerts", [])),
+        "timestamp": time.time(),
+    }
 
 # ===========================================
 # TRAINING & FINE-TUNING ENDPOINTS

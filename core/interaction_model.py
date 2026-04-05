@@ -91,7 +91,7 @@ Trợ lý AI:"""
             
             # Chỉ đưa top N sản phẩm vào prompt để giảm thời gian LLM
             products_for_prompt = search_results[:max_products_in_prompt]
-            prompt = PromptTemplates.get_contextual_prompt(
+            prompt = PromptTemplates.get_grounded_search_prompt(
                 query=query,
                 context=context or {},
                 products=products_for_prompt,
@@ -104,11 +104,14 @@ Trợ lý AI:"""
                 temperature=0.5,
             )
 
-            # Chỉ trả về câu đầu tiên (thường là lời chào/xác nhận nhu cầu),
-            # phần list sản phẩm sẽ được UI hiển thị từ metadata.search_results.
             text = (response or "").strip()
-            first_line = text.split("\n", 1)[0].strip()
-            return first_line
+            if not text:
+                return self._generate_fallback_search_response(query, search_results)
+
+            return self._ensure_grounded_response(
+                response_text=text,
+                products=products_for_prompt,
+            )
             
         except Exception as e:
             logger.error("Failed to generate search response: %s", e)
@@ -305,5 +308,32 @@ Bạn có muốn tôi gợi ý một số sản phẩm phổ biến không?"""
             response_parts.append(line)
         if len(search_results) > 5:
             response_parts.append(f"... và {len(search_results) - 5} sản phẩm khác.")
+        response_parts.append(PromptTemplates.build_grounding_reference_block(search_results, max_items=3))
         response_parts.append("Bạn có muốn tôi cung cấp thêm thông tin chi tiết về sản phẩm nào không?")
         return "\n".join(response_parts)
+
+    def _ensure_grounded_response(self, response_text: str, products: List[Dict[str, Any]]) -> str:
+        """Ensure final answer includes references to retrieved products."""
+        if not products:
+            return response_text
+
+        lowered_text = response_text.lower()
+        has_reference = False
+        for product in products:
+            product_id = str(product.get("backend_id") or product.get("id") or "").strip().lower()
+            product_name = str(product.get("name") or "").strip().lower()
+            if (product_id and product_id in lowered_text) or (product_name and product_name in lowered_text):
+                has_reference = True
+                break
+
+        final_text = response_text
+        if not has_reference:
+            final_text = self._generate_fallback_search_response(
+                query="sản phẩm phù hợp",
+                search_results=products,
+            )
+
+        if "nguồn đối chiếu" not in final_text.lower():
+            final_text = f"{final_text}\n\n{PromptTemplates.build_grounding_reference_block(products, max_items=3)}"
+
+        return final_text

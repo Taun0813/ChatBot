@@ -13,6 +13,7 @@ from config import get_settings
 from adapters.pinecone_client import PineconeClient
 from core.rag_model import RAGModel
 from adapters.model_loader import ModelLoaderFactory
+from data.schema.product_schema import ProductSchema
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -156,82 +157,13 @@ class DataInitializer:
         default_category: str = "Khác"
     ) -> Optional[Dict[str, Any]]:
         try:
-            from data.schema.product_schema import normalize_category
-            import re
-
-            # --- SAFE GET ---
-            def s(val):
-                return str(val).strip() if val is not None else ""
-
-            # --- MAP ĐÚNG CSV ---
-            name = s(
-                raw_product.get("name")
-                or raw_product.get("model")
-                or raw_product.get("Model Name")
-                or raw_product.get("title")
+            normalized = ProductSchema.from_raw(
+                raw_product,
+                default_category=default_category,
+                source="init_data",
+                source_id=self._extract_backend_id(raw_product) or None,
             )
-
-            brand = s(
-                raw_product.get("brand")
-                or raw_product.get("company")
-                or raw_product.get("Company Name")
-            )
-
-            if not name or not brand:
-                raise ValueError("Missing required field: name or brand")
-
-            category = normalize_category(
-                s(raw_product.get("category") or raw_product.get("type") or default_category)
-            )
-
-            # --- PRICE: handle 'USD 799', '79,999' ---
-            raw_price = raw_product.get("price") or raw_product.get("price_vnd") \
-                        or raw_product.get("Launched Price (USA)") or 0
-            price = int(re.sub(r"[^\d]", "", str(raw_price)) or 0)
-
-            description = s(raw_product.get("description") or raw_product.get("desc"))
-
-            # --- SPECS ---
-            specs = raw_product.get("specifications") or raw_product.get("specs") or {}
-            if not isinstance(specs, dict):
-                specs = {}
-
-            # --- FEATURES ---
-            features = raw_product.get("features") or []
-            if isinstance(features, str):
-                features = [f.strip() for f in features.split(",") if f.strip()]
-
-            # --- PRODUCT ID ---
-            # Prefer backend_id so Pinecone IDs align with backend DB keys.
-            backend_id = self._extract_backend_id(raw_product)
-            if backend_id:
-                product_id = backend_id
-            else:
-                product_id = f"{brand}_{name}"
-                product_id = re.sub(r"[^a-zA-Z0-9_-]", "", product_id.lower().replace(" ", "_"))
-
-            if not description:
-                description = f"{name} - {brand} - {category}. Giá {price:,.0f}."
-
-            return {
-                "id": product_id,
-                "backend_id": backend_id or product_id,
-                "name": name,
-                "brand": brand,
-                "price": price,
-                "description": description,
-                "category": category,
-                "rating": float(raw_product.get("rating", 4.5)),
-                "reviews_count": int(raw_product.get("reviews_count", 0)),
-                "availability": str(raw_product.get("availability", "In Stock")),
-                "is_live": self._parse_live_status(
-                    raw_product.get("is_live", raw_product.get("in_website", True)),
-                    default=True,
-                ),
-                "specifications": specs,
-                "image_url": s(raw_product.get("image_url") or raw_product.get("image")),
-                "features": features,
-            }
+            return normalized.to_dict()
 
         except Exception as e:
             logger.warning(
@@ -284,134 +216,13 @@ class DataInitializer:
     def transform_product_data(self, raw_product: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Transform raw product data from CSV to our format"""
         try:
-            # Extract basic information (hỗ trợ nhiều tên cột do BOM/encoding)
-            brand = self._get_csv_value(
+            normalized = ProductSchema.from_raw(
                 raw_product,
-                "Company Name", "\ufeffCompany Name", "company name", "Company",
-                default="Unknown"
+                default_category="Điện thoại",
+                source="init_data",
+                source_id=self._extract_backend_id(raw_product) or None,
             )
-            full_model_name = self._get_csv_value(
-                raw_product,
-                "Model Name", "model name", "Model",
-                default="Unknown"
-            )
-            
-            # Attempt to extract storage (ROM) from model name (e.g., "iPhone 16 128GB")
-            rom_match = re.search(r'(\d+)(GB|TB)', full_model_name, re.IGNORECASE)
-            rom_val = rom_match.group(0) if rom_match else "Unknown"
-            
-            # Clean Model Name (remove storage info for cleaner name if desired, or keep full)
-            model = full_model_name
-            
-            # Price Conversion (USD to VND)
-            # Format: "USD 799" -> 799 -> * 25000
-            price_str = str(raw_product.get("Launched Price (USA)", "0") or "0")
-            try:
-                # Remove "USD" and commas, then convert
-                clean_price = float(re.sub(r'[^\d.]', '', price_str))
-                price_vnd = int(clean_price * 25000)
-            except:
-                price_vnd = 0
-            
-            # Clean specs - handle comma-separated numbers
-            def clean_spec(val, unit=""):
-                s = str(val).lower().replace(unit.lower(), "").strip()
-                # Remove commas and extract number
-                try:
-                    # Remove all non-digit characters except decimal point
-                    cleaned = re.sub(r'[^\d.]', '', s.replace(',', ''))
-                    return float(cleaned) if cleaned else 0
-                except:
-                    return 0
-
-            ram = clean_spec(raw_product.get("RAM", "0"), "GB")
-            screen_size = clean_spec(raw_product.get("Screen Size", "0"), "inches")
-            battery = clean_spec(raw_product.get("Battery Capacity", "0"), "mAh")
-            
-            # Camera parsing (taking the main sensor val if multiple)
-            # "48MP" -> 48
-            back_cam_str = str(raw_product.get("Back Camera", "0"))
-            back_cam = float(re.search(r'(\d+)', back_cam_str).group(1)) if re.search(r'(\d+)', back_cam_str) else 0
-            
-            front_cam_str = str(raw_product.get("Front Camera", "0"))
-            front_cam = float(re.search(r'(\d+)', front_cam_str).group(1)) if re.search(r'(\d+)', front_cam_str) else 0
-
-            # Create product ID (skip nếu cả brand và model đều Unknown - có thể lỗi đọc cột)
-            if brand == "Unknown" and full_model_name == "Unknown":
-                logger.warning(
-                    "Row has Unknown brand/model - kiểm tra tên cột CSV. Keys: %s",
-                    list(raw_product.keys())[:5]
-                )
-            backend_id = self._extract_backend_id(raw_product)
-            if backend_id:
-                product_id = backend_id
-            else:
-                product_id = f"{brand.lower()}_{model.lower().replace(' ', '_').replace('-', '_')}"
-                product_id = re.sub(r'[^a-zA-Z0-9_]', '', product_id)
-            
-            # Infer OS from brand
-            os_type = "iOS" if brand.lower() == "apple" else "Android"
-            
-            # Extract weight
-            weight_str = str(raw_product.get("Mobile Weight", "0"))
-            weight = clean_spec(weight_str, "g")
-            
-            # Extract launch year
-            launch_year = raw_product.get("Launched Year", "")
-            
-            # Extract specifications
-            specifications = {
-                "màn hình": f"{screen_size} inch",
-                "ram": f"{int(ram)}GB" if ram > 0 else "Unknown",
-                "rom": f"{rom_val}",
-                "pin": f"{int(battery)}mAh" if battery > 0 else "Unknown",
-                "camera": f"{back_cam_str}",
-                "camera trước": f"{front_cam_str}",
-                "chip": str(raw_product.get("Processor", "Unknown")),
-                "trọng lượng": f"{int(weight)}g" if weight > 0 else "Unknown",
-                "hệ điều hành": os_type,
-                "năm ra mắt": str(launch_year) if launch_year else "Unknown",
-                "5G": "Có", # Assumption for 2025 dataset
-                "NFC": "Có", # Assumption
-                "sạc nhanh": "Có" # Assumption
-            }
-            
-            # Create description
-            description_parts = [
-                f"{model} - Điện thoại {brand}",
-                f"màn hình {screen_size} inch" if screen_size > 0 else "",
-                f"vi xử lý {specifications['chip']}",
-                f"camera {specifications['camera']}",
-                f"pin {specifications['pin']}" if battery > 0 else "",
-                f"RAM {specifications['ram']}" if ram > 0 else "",
-                f"ROM {rom_val}",
-                f"Hệ điều hành {os_type}",
-                f"Ra mắt năm {launch_year}" if launch_year else ""
-            ]
-            description = ". ".join([p for p in description_parts if p]) + f". Giá khoảng {price_vnd:,.0f} VNĐ."
-            
-            # Create product data
-            product_data = {
-                "id": product_id,
-                "backend_id": backend_id or product_id,
-                "name": model,
-                "brand": brand,
-                "price": price_vnd,
-                "description": description,
-                "category": "Điện thoại",
-                "rating": 4.5, # Default since no rating in CSV
-                "reviews_count": 0,
-                "availability": "In Stock",
-                "is_live": self._parse_live_status(
-                    raw_product.get("is_live", raw_product.get("in_website", True)),
-                    default=True,
-                ),
-                "specifications": specifications,
-                "image_url": "",
-                "features": self._extract_features(specifications, price_vnd)
-            }
-            
-            return product_data
+            return normalized.to_dict()
             
         except Exception as e:
             logger.error("Failed to transform product data: %s | Data: %s", e, raw_product)

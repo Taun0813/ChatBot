@@ -6,6 +6,7 @@ Handles API calls to Spring Boot microservices
 import asyncio
 import logging
 import httpx
+import re
 from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,8 @@ class APIModel:
             "order": self.config.get("order_service_url", "http://localhost:8181/api/orders"),
             "payment": self.config.get("payment_service_url", "http://localhost:8181/api/payments"),
             "warranty": self.config.get("warranty_service_url", "http://localhost:8181/api/warranties"),
-            "product": self.config.get("product_service_url", "http://localhost:8181/api/products")
+            "product": self.config.get("product_service_url", "http://localhost:8181/api/products"),
+            "cart": self.config.get("cart_service_url", "http://localhost:8181/api/carts"),
         }
         
         # API Keys for Spring Boot services
@@ -38,7 +40,8 @@ class APIModel:
             "order": self.config.get("order_service_api_key"),
             "payment": self.config.get("payment_service_api_key"),
             "warranty": self.config.get("warranty_service_api_key"),
-            "product": self.config.get("product_service_api_key")
+            "product": self.config.get("product_service_api_key"),
+            "cart": self.config.get("cart_service_api_key") or self.config.get("order_service_api_key"),
         }
         
         # Timeout settings
@@ -108,6 +111,8 @@ class APIModel:
                 response = await self.client.post(url, headers=headers, json=data)
             elif method.upper() == "PUT":
                 response = await self.client.put(url, headers=headers, json=data)
+            elif method.upper() == "DELETE":
+                response = await self.client.delete(url, headers=headers, json=data)
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             
@@ -437,11 +442,110 @@ Bạn cần hỗ trợ gì cụ thể?"""
         except Exception as e:
             logger.error("Failed to handle general API request: %s", e)
             return "Xin lỗi, tôi không thể xử lý yêu cầu lúc này. Vui lòng thử lại sau."
+
+    async def handle_cart_request(
+        self,
+        message: str,
+        user_id: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Handle cart operations using cart service endpoints."""
+        try:
+            logger.info("Handling cart request: %s", message)
+
+            if not self.enable_api_calls:
+                return "Tính năng gọi API hiện đang tắt nên chưa thể thao tác giỏ hàng."
+
+            context = context or {}
+            action = self._detect_cart_action(message, context)
+
+            if action == "get_admin":
+                admin_user_id = (
+                    context.get("target_user_id")
+                    or context.get("user_id")
+                    or self._extract_user_id(message)
+                )
+                if not admin_user_id:
+                    return "Vui lòng cung cấp userId để xem giỏ hàng theo quyền ADMIN."
+
+                cart_payload = await self._call_spring_boot_service(
+                    service_name="cart",
+                    endpoint=f"/{admin_user_id}",
+                    method="GET",
+                    context=context,
+                )
+                return self._format_cart_response(cart_payload, action="get_admin")
+
+            if action == "clear":
+                clear_payload = await self._call_spring_boot_service(
+                    service_name="cart",
+                    endpoint="/clear",
+                    method="DELETE",
+                    context=context,
+                )
+                return self._format_cart_response(clear_payload, action="clear")
+
+            if action == "remove_item":
+                item_id = context.get("item_id") or self._extract_item_id(message)
+                if not item_id:
+                    return "Vui lòng cung cấp itemId để xóa sản phẩm khỏi giỏ hàng."
+
+                remove_payload = await self._call_spring_boot_service(
+                    service_name="cart",
+                    endpoint=f"/items/{item_id}",
+                    method="DELETE",
+                    context=context,
+                )
+                return self._format_cart_response(remove_payload, action="remove_item")
+
+            if action == "update_item":
+                item_id = context.get("item_id") or self._extract_item_id(message)
+                quantity = context.get("quantity") or self._extract_quantity(message)
+                if not item_id or quantity <= 0:
+                    return "Vui lòng cung cấp itemId và quantity hợp lệ để cập nhật giỏ hàng."
+
+                update_payload = await self._call_spring_boot_service(
+                    service_name="cart",
+                    endpoint=f"/items/{item_id}",
+                    method="PUT",
+                    data={"quantity": int(quantity)},
+                    context=context,
+                )
+                return self._format_cart_response(update_payload, action="update_item")
+
+            if action == "add_item":
+                product_id = context.get("product_id") or self._extract_product_id_for_cart(message)
+                quantity = context.get("quantity") or self._extract_quantity(message) or 1
+                if not product_id:
+                    return "Vui lòng cung cấp productId để thêm sản phẩm vào giỏ hàng."
+
+                add_payload = await self._call_spring_boot_service(
+                    service_name="cart",
+                    endpoint="/items",
+                    method="POST",
+                    data={
+                        "productId": str(product_id),
+                        "quantity": int(quantity),
+                    },
+                    context=context,
+                )
+                return self._format_cart_response(add_payload, action="add_item")
+
+            # default action: get current cart
+            cart_payload = await self._call_spring_boot_service(
+                service_name="cart",
+                endpoint="/me",
+                method="GET",
+                context=context,
+            )
+            return self._format_cart_response(cart_payload, action="get_me")
+
+        except Exception as e:
+            logger.error("Failed to handle cart request: %s", e)
+            return "Xin lỗi, tôi không thể xử lý giỏ hàng lúc này. Vui lòng thử lại sau."
     
     def _extract_order_id(self, message: str) -> Optional[str]:
         """Extract order ID from message"""
-        import re
-        
         # Look for patterns like #1234, order 1234, đơn hàng 1234
         patterns = [
             r'#(\d+)',
@@ -457,6 +561,141 @@ Bạn cần hỗ trợ gì cụ thể?"""
                 return match.group(1)
         
         return None
+
+    def _extract_item_id(self, message: str) -> Optional[str]:
+        """Extract cart item ID from user message."""
+        text = (message or "").strip().lower()
+        patterns = [
+            r"item\s*id\s*[:#-]?\s*([a-z0-9_-]+)",
+            r"item\s*[:#-]?\s*([a-z0-9_-]+)",
+            r"cart\s*item\s*[:#-]?\s*([a-z0-9_-]+)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                return match.group(1)
+        return None
+
+    def _extract_product_id_for_cart(self, message: str) -> Optional[str]:
+        """Extract product ID for add-to-cart flow."""
+        text = (message or "").strip().lower()
+        patterns = [
+            r"product\s*id\s*[:#-]?\s*([a-z0-9_-]+)",
+            r"sản\s*phẩm\s*[:#-]?\s*([a-z0-9_-]+)",
+            r"mã\s*sản\s*phẩm\s*[:#-]?\s*([a-z0-9_-]+)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                return match.group(1)
+        return None
+
+    def _extract_quantity(self, message: str) -> int:
+        """Extract quantity from message text."""
+        text = (message or "").strip().lower()
+        patterns = [
+            r"số\s*lượng\s*[:=]?\s*(\d+)",
+            r"quantity\s*[:=]?\s*(\d+)",
+            r"x\s*(\d+)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                try:
+                    value = int(match.group(1))
+                    return max(0, value)
+                except (TypeError, ValueError):
+                    continue
+        return 0
+
+    def _extract_user_id(self, message: str) -> Optional[str]:
+        """Extract user id from message for admin cart lookup."""
+        text = (message or "").strip()
+        patterns = [
+            r"user\s*id\s*[:#-]?\s*([a-zA-Z0-9_-]+)",
+            r"user\s*[:#-]?\s*([a-zA-Z0-9_-]+)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return match.group(1)
+        return None
+
+    def _detect_cart_action(self, message: str, context: Dict[str, Any]) -> str:
+        """Infer cart operation from message and context hints."""
+        hinted = str(context.get("cart_action", "")).strip().lower()
+        if hinted in {"get_me", "add_item", "update_item", "remove_item", "clear", "get_admin"}:
+            return hinted
+
+        text = (message or "").strip().lower()
+
+        if any(token in text for token in ["admin", "quản trị", "xem giỏ user", "giỏ của user"]):
+            return "get_admin"
+        if any(token in text for token in ["clear", "xóa hết", "xoa het", "làm trống", "lam trong"]):
+            return "clear"
+        if any(token in text for token in ["cập nhật", "cap nhat", "update", "đổi số lượng", "doi so luong"]):
+            return "update_item"
+        if any(token in text for token in ["xóa", "xoa", "remove", "delete"]):
+            return "remove_item"
+        if any(token in text for token in ["thêm", "them", "add"]):
+            return "add_item"
+        return "get_me"
+
+    def _format_cart_response(self, payload: Dict[str, Any], action: str) -> str:
+        """Format cart service payload into user-friendly text."""
+        if payload is None:
+            return "Không nhận được dữ liệu giỏ hàng từ backend."
+
+        if "error" in payload:
+            status_code = payload.get("status_code")
+            if status_code == 401:
+                return "Phiên đăng nhập không hợp lệ hoặc đã hết hạn khi thao tác giỏ hàng. Vui lòng đăng nhập lại."
+            if status_code == 403:
+                return "Bạn không có quyền thực hiện thao tác giỏ hàng này."
+            if status_code == 404:
+                return "Không tìm thấy giỏ hàng hoặc item tương ứng."
+            return "Xin lỗi, hiện không thể thao tác giỏ hàng. Vui lòng thử lại sau."
+
+        action_messages = {
+            "add_item": "Đã thêm sản phẩm vào giỏ hàng thành công.",
+            "update_item": "Đã cập nhật số lượng sản phẩm trong giỏ hàng.",
+            "remove_item": "Đã xóa sản phẩm khỏi giỏ hàng.",
+            "clear": "Đã xóa toàn bộ giỏ hàng.",
+            "get_admin": "Thông tin giỏ hàng của user:",
+            "get_me": "Thông tin giỏ hàng hiện tại của bạn:",
+        }
+
+        items = payload.get("items") or payload.get("cartItems") or []
+        total = payload.get("totalAmount")
+        total_items = payload.get("totalItems")
+        cart_id = payload.get("id") or payload.get("cartId")
+
+        lines = [action_messages.get(action, "Thao tác giỏ hàng thành công.")]
+        if cart_id is not None:
+            lines.append(f"Mã giỏ hàng: {cart_id}")
+        if total_items is not None:
+            lines.append(f"Tổng số lượng: {total_items}")
+        if total is not None:
+            try:
+                lines.append(f"Tạm tính: {float(total):,.0f} VNĐ")
+            except Exception:
+                lines.append(f"Tạm tính: {total}")
+
+        if isinstance(items, list) and items:
+            lines.append("Sản phẩm trong giỏ:")
+            for idx, item in enumerate(items[:5], 1):
+                name = item.get("productName") or item.get("name") or item.get("product_id") or "Sản phẩm"
+                quantity = item.get("quantity", 1)
+                price = item.get("price") if item.get("price") is not None else item.get("unitPrice")
+                if price is not None:
+                    try:
+                        lines.append(f"{idx}. {name} x{quantity} - {float(price):,.0f} VNĐ")
+                    except Exception:
+                        lines.append(f"{idx}. {name} x{quantity} - {price}")
+                else:
+                    lines.append(f"{idx}. {name} x{quantity}")
+
+        return "\n".join(lines)
     
     
     def _format_order_response(self, order_info: Dict[str, Any]) -> str:

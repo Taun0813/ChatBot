@@ -3,11 +3,18 @@ Product Service
 Handles product-related operations
 """
 
-import logging
-from typing import List, Dict, Any, Optional
-from dataclasses import dataclass
 import json
+import logging
 import os
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
+from data.schema.product_schema import (
+    normalize_category,
+    normalize_specifications,
+    normalize_text,
+    parse_price_value,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +33,16 @@ class Product:
     brand: str
     rating: float = 0.0
     reviews_count: int = 0
+    currency: str = "VND"
+    price_vnd: int = 0
+    source_price: float = 0.0
+    source_currency: str = "VND"
+    availability: str = "In Stock"
+    is_live: bool = True
+    tags: List[str] = field(default_factory=list)
+    backend_id: Optional[str] = None
+    source: Optional[str] = None
+    search_text: str = ""
 
 class ProductService:
     """Service for managing products"""
@@ -39,17 +56,43 @@ class ProductService:
 
     def _normalize_category(self, category: str) -> str:
         """Normalize category to supported labels"""
-        cat_lower = (category or "").strip().lower()
-        mapping = {
-            "phone": "Điện thoại", "mobile": "Điện thoại", "smartphone": "Điện thoại",
-            "laptop": "Laptop", "notebook": "Laptop", "macbook": "Laptop",
-            "tablet": "Tablet", "ipad": "Tablet",
-            "accessory": "Phụ kiện", "phụ kiện": "Phụ kiện", "phu kien": "Phụ kiện",
-            "watch": "Đồng hồ thông minh", "smartwatch": "Đồng hồ thông minh",
-            "headphone": "Tai nghe", "tai nghe": "Tai nghe", "earphone": "Tai nghe",
-            "power bank": "Sạc dự phòng", "sạc dự phòng": "Sạc dự phòng",
+        return normalize_category(category)
+
+    def _normalize_price_fields(self, item: Dict[str, Any], category: str) -> Dict[str, Any]:
+        """Normalize price fields and convert legacy USD-like prices to VND."""
+        price_vnd = item.get("price_vnd")
+        source_price = item.get("source_price")
+        source_currency = item.get("source_currency")
+        currency = item.get("currency")
+
+        if price_vnd is not None:
+            try:
+                return {
+                    "price": float(price_vnd),
+                    "price_vnd": int(float(price_vnd)),
+                    "source_price": float(source_price if source_price is not None else price_vnd),
+                    "source_currency": normalize_text(source_currency, default=currency or "VND").upper() or "VND",
+                    "currency": normalize_text(currency, default="VND") or "VND",
+                }
+            except (TypeError, ValueError):
+                pass
+
+        raw_price = item.get("price")
+        raw_source_currency = normalize_text(source_currency, default="").upper()
+        if not raw_source_currency and isinstance(raw_price, (int, float)) and float(raw_price) < 10_000:
+            raw_source_currency = "USD" if category == "Điện thoại" else "VND"
+
+        source_value, detected_currency, converted_price = parse_price_value(
+            raw_price,
+            currency_hint=raw_source_currency or None,
+        )
+        return {
+            "price": float(converted_price or source_value),
+            "price_vnd": int(converted_price or source_value),
+            "source_price": float(source_value),
+            "source_currency": detected_currency,
+            "currency": "VND" if converted_price else detected_currency,
         }
-        return mapping.get(cat_lower, category or "Khác")
 
     def _availability_to_stock(self, availability: Optional[str]) -> int:
         """Map availability text to a stock number"""
@@ -58,6 +101,8 @@ class ProductService:
         availability_lower = availability.strip().lower()
         if "in stock" in availability_lower or "còn hàng" in availability_lower:
             return 10
+        if "preorder" in availability_lower or "đặt trước" in availability_lower:
+            return 1
         if "out of stock" in availability_lower or "hết hàng" in availability_lower:
             return 0
         return 0
@@ -88,19 +133,48 @@ class ProductService:
                 if image_url and not images:
                     images = [image_url]
 
+                normalized_category = self._normalize_category(item.get("category"))
+                price_fields = self._normalize_price_fields(item, normalized_category)
+                specs = normalize_specifications(item.get("specifications") or item.get("specs") or {})
+                tags = item.get("tags") if isinstance(item.get("tags"), list) else []
+                if isinstance(tags, str):
+                    tags = [tag.strip() for tag in tags.split(",") if tag.strip()]
+
+                search_text = item.get("search_text") or " ".join(
+                    filter(
+                        None,
+                        [
+                            normalize_text(item.get("name")),
+                            normalize_text(item.get("brand")),
+                            normalize_text(normalized_category),
+                            normalize_text(item.get("description")),
+                        ],
+                    )
+                )
+
                 product_data = {
                     "id": item.get("id") or "",
                     "name": item.get("name") or "",
                     "description": item.get("description") or "",
-                    "category": self._normalize_category(item.get("category")),
-                    "price": float(item.get("price") or 0),
+                    "category": normalized_category,
+                    "price": price_fields["price"],
                     "stock": self._availability_to_stock(item.get("availability")),
                     "features": item.get("features") or [],
-                    "specifications": item.get("specifications") or {},
+                    "specifications": specs,
                     "images": images,
                     "brand": item.get("brand") or "",
                     "rating": float(item.get("rating") or 0.0),
                     "reviews_count": int(item.get("reviews_count") or 0),
+                    "currency": price_fields["currency"],
+                    "price_vnd": price_fields["price_vnd"],
+                    "source_price": price_fields["source_price"],
+                    "source_currency": price_fields["source_currency"],
+                    "availability": normalize_text(item.get("availability"), default="In Stock"),
+                    "is_live": bool(item.get("is_live", True)),
+                    "tags": tags,
+                    "backend_id": item.get("backend_id") or item.get("id"),
+                    "source": item.get("source"),
+                    "search_text": search_text,
                 }
 
                 if not product_data["id"]:

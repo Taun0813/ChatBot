@@ -1,7 +1,7 @@
 {
-  "user_id": "user123",
-  "created_at": "2025-09-17T18:18:08.678032",
-  "last_accessed": "2026-04-04T12:15:05.751684",
+  "user_id": "1",
+  "created_at": "2026-04-05T11:53:51.741877",
+  "last_accessed": "2026-04-05T11:55:25.674427",
   "preferences": {
     "brands": {},
     "categories": {},
@@ -11,8 +11,8 @@
   },
   "search_history": [
     {
-      "query": "Mua máy tầm 15–20 triệu. Máy nào camera đẹp?",
-      "timestamp": "2026-04-04T12:17:41.578343"
+      "query": "tim dien thoai samsung",
+      "timestamp": "2026-04-05T11:55:25.678427"
     }
   ],
   "purchase_history": [],
@@ -20,9 +20,9 @@
     {
       "type": "search",
       "product_id": null,
-      "query": "Mua máy tầm 15–20 triệu. Máy nào camera đẹp?",
+      "query": "tim dien thoai samsung",
       "rating": null,
-      "timestamp": "2026-04-04T12:17:41.578343"
+      "timestamp": "2026-04-05T11:55:25.678427"
     }
   ],
   "profile_data": {

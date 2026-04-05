@@ -77,41 +77,42 @@ class AILogger:
         console_handler.setFormatter(console_formatter)
         self.logger.addHandler(console_handler)
     
-    def debug(self, message: str, **kwargs):
+    def debug(self, message: str, *args, **kwargs):
         """Log debug message"""
-        self._log(logging.DEBUG, message, **kwargs)
+        self._log(logging.DEBUG, message, *args, **kwargs)
     
-    def info(self, message: str, **kwargs):
+    def info(self, message: str, *args, **kwargs):
         """Log info message"""
-        self._log(logging.INFO, message, **kwargs)
+        self._log(logging.INFO, message, *args, **kwargs)
     
-    def warning(self, message: str, **kwargs):
+    def warning(self, message: str, *args, **kwargs):
         """Log warning message"""
-        self._log(logging.WARNING, message, **kwargs)
+        self._log(logging.WARNING, message, *args, **kwargs)
     
-    def error(self, message: str, **kwargs):
+    def error(self, message: str, *args, **kwargs):
         """Log error message"""
-        self._log(logging.ERROR, message, **kwargs)
+        self._log(logging.ERROR, message, *args, **kwargs)
     
-    def critical(self, message: str, **kwargs):
+    def critical(self, message: str, *args, **kwargs):
         """Log critical message"""
-        self._log(logging.CRITICAL, message, **kwargs)
+        self._log(logging.CRITICAL, message, *args, **kwargs)
     
-    def _log(self, level: int, message: str, **kwargs):
+    def _log(self, level: int, message: str, *args, **kwargs):
         """Internal logging method"""
         extra_fields = kwargs.pop('extra_fields', {})
+        exc_info = kwargs.pop('exc_info', None)
         if kwargs:
             extra_fields.update(kwargs)
         
         if extra_fields:
             # Create a new record with extra fields
             record = self.logger.makeRecord(
-                self.logger.name, level, "", 0, message, (), None
+                self.logger.name, level, "", 0, message, args, exc_info
             )
             record.extra_fields = extra_fields
             self.logger.handle(record)
         else:
-            self.logger.log(level, message)
+            self.logger.log(level, message, *args, exc_info=exc_info)
 
 def setup_logger(name: str, level: str = "INFO") -> AILogger:
     """Setup and return a logger instance"""

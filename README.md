@@ -14,7 +14,7 @@ Một hệ thống AI Agent thông minh cho thương mại điện tử với **
 - **Bộ dữ liệu đa danh mục**: Hỗ trợ điện thoại di động, máy tính xách tay, máy tính bảng và phụ kiện (CSV + JSON).
 - **Hệ thống RAG**: Thực hiện tìm kiếm ngữ nghĩa bằng Pinecone (có thể bật/tắt bằng `RAG_ENABLED=true`).
 - **Trò chuyện thông minh**: Cung cấp tương tác tự nhiên, với cơ chế dự phòng khi RAG bị tắt.
-- **Tích hợp API**: Kết nối với các microservice Spring Boot để xử lý đơn hàng, thanh toán và bảo hành (có thể bật/tắt bằng `ENABLE_API_CALLS`).
+- **Tích hợp API**: Kết nối với các microservice Spring Boot cho order/payment/warranty; đã có intent cho shipping/cart/checkout/refund/return.
 - **Cá nhân hóa**: Thích ứng với hành vi của người dùng và cung cấp các đề xuất (tùy chọn).
 - **Hỗ trợ đa mô hình**: Tương thích với nhiều LLM khác nhau, bao gồm Gemini, Groq, Ollama và OpenAI.
 - **Bộ nhớ đệm**: Có hệ thống bộ nhớ đệm thông minh với các tùy chọn Redis và trong bộ nhớ.
@@ -68,9 +68,10 @@ graph TB
     
     H --> I{Quyết định ý định}
     
-    I -->|tìm kiếm| J[Tác nhân RAG]
-    I -->|trò chuyện| K[Tác nhân hội thoại]
-    I -->|api| L[Tác nhân API]
+    I -->|search| J[Tác nhân RAG]
+    I -->|chat| K[Tác nhân hội thoại]
+    I -->|order/shipping/payment/warranty/cart| L[Tác nhân API]
+    I -->|checkout/refund/return| W[Flow giao dịch có hướng dẫn]
     
     J --> M[Tìm kiếm Vector Pinecone]
     M --> N[Kết quả sản phẩm]
@@ -86,6 +87,7 @@ graph TB
     P --> U[Trình quản lý bộ nhớ đệm]
     R --> U
     T --> U
+    W --> U
     
     U --> V[Phản hồi cho khách hàng]
 ```
@@ -177,7 +179,7 @@ Lệnh này sẽ xây dựng hình ảnh Docker và khởi động các containe
 - `message` (string, bắt buộc): Tin nhắn của người dùng.
 - `user_id` (string, tùy chọn): Một mã định danh duy nhất cho người dùng, được sử dụng để cá nhân hóa.
 - `session_id` (string, tùy chọn): Một mã định danh cho phiên trò chuyện hiện tại.
-- `intent` (string, tùy chọn): Có thể được sử dụng để buộc một ý định cụ thể (`search`, `order`, `chat`, `api`).
+- `intent` (string, tùy chọn): Có thể được sử dụng để gợi ý/buộc intent cụ thể (`search`, `chat`, `order`, `shipping`, `payment`, `warranty`, `cart`, `checkout`, `refund`, `return`, `api_call`).
 
 **Nội dung phản hồi**:
 ```json
@@ -188,11 +190,147 @@ Lệnh này sẽ xây dựng hình ảnh Docker và khởi động các containe
   "confidence": 0.95,
   "session_id": "session001",
   "metadata": {
+    "flow": "search",
+    "grounding": {
+      "grounded": true,
+      "evidence_count": 3,
+      "evidence_ids": ["mobile_oneplus_12_256gb_black"],
+      "citations": [...],
+      "grounding_policy": "retrieval_only"
+    },
     "model_info": { "backend": "gemini", "model_name": "gemini-1.5-flash" },
-    "search_results": [...]
+    "search_results": [...],
+    "action_required": "backend_integration"
   }
 }
 ```
+
+## Trạng thái hiện tại (04/2026)
+
+Hệ thống đã đạt mức **beta tốt** cho trợ lý ecommerce, đặc biệt mạnh ở search + grounding + orchestration. Tuy nhiên chưa đạt mức "production-complete" cho toàn bộ transactional flow.
+
+**Đã ổn định:**
+- Hybrid router (rule + ML + fusion) chạy ổn và có metrics.
+- Luồng tìm kiếm sản phẩm bằng RAG đã gắn grounding metadata (citations/evidence IDs).
+- Intent coverage đã mở rộng cho nghiệp vụ ecommerce cốt lõi.
+- OpenAPI đã phản ánh intent mới và metadata chính.
+
+**Chưa hoàn tất:**
+- `checkout`, `refund`, `return` hiện là handler có hướng dẫn nghiệp vụ vì backend chưa cung cấp service chuyên dụng.
+- Chưa có bộ test tự động đủ sâu cho routing/grounding/regression.
+- Một số endpoint training phụ thuộc module pipeline tùy chọn (có thể không tồn tại trong mọi môi trường).
+
+## Ma trận intent và trạng thái thực thi
+
+| Intent | Nguồn xử lý chính | Trạng thái | Metadata đặc trưng |
+|---|---|---|---|
+| `search` | RAG + Interaction model | Hoàn chỉnh | `grounding`, `search_results`, `results_count`, `product_links` |
+| `chat` | Interaction model | Hoàn chỉnh | `model_used=interaction` |
+| `order` | API model (order service) | Hoàn chỉnh (phụ thuộc backend) | `model_used=api` |
+| `shipping` | API model (order service) | Hoàn chỉnh mức tracking cơ bản | `flow=shipping` |
+| `payment` | API model (payment service) | Hoàn chỉnh (phụ thuộc backend) | `flow=payment` |
+| `warranty` | API model (warranty service) | Hoàn chỉnh (phụ thuộc backend) | `flow=warranty` |
+| `cart` | API model (cart service) | Hoàn chỉnh (phụ thuộc backend) | `flow=cart`, `model_used=api` |
+| `checkout` | Router guided flow | Chưa full backend | `flow=checkout`, `action_required=backend_integration` |
+| `refund` | Router guided flow + parse order id | Chưa full backend | `flow=refund`, `order_id`, `action_required` |
+| `return` | Router guided flow + parse order id | Chưa full backend | `flow=return`, `order_id`, `action_required` |
+| `api` / `api_call` | API model general | Hoàn chỉnh mức generic | `model_used=api` |
+
+## Luồng Agent chi tiết
+
+### 1) Luồng Search Agent (RAG-first)
+1. Nhận message + context từ `/ask`.
+2. Router phân loại intent qua Rule Router, ML Router, sau đó fusion.
+3. Nếu `search`: gọi `rag_model.search_products`.
+4. Kết quả được re-rank theo personalization (nếu bật).
+5. Interaction model tạo câu trả lời dựa trên top products.
+6. Router build `grounding` metadata gồm `citations`, `evidence_ids`, `grounded`.
+7. Cache kết quả truy vấn để giảm latency cho lần hỏi lại.
+
+### 2) Luồng API Agent (order/payment/warranty/shipping)
+1. Router xác thực trạng thái auth (`user_id` hoặc token trong context).
+2. Gọi `APIModel` đến Spring Boot service tương ứng.
+3. Chuẩn hóa lỗi backend (401, service unavailable) thành thông điệp thân thiện.
+4. Trả metadata `flow` + `model_used=api` để frontend phân loại hiển thị.
+
+### 3) Luồng Guided Transaction Agent (checkout/refund/return)
+1. Router nhận intent transaction.
+2. Nếu thiếu dữ liệu quan trọng (ví dụ `order_id`) thì phản hồi yêu cầu bổ sung.
+3. Nếu đủ dữ liệu thì phản hồi theo flow nghiệp vụ hiện có.
+4. Metadata trả về `action_required` để FE/BE orchestration layer xử lý bước tiếp theo.
+
+## Hybrid Orchestrator: cơ chế ra quyết định
+
+### Rule-based router
+- Dùng regex/keyword rules có priority để bắt intent rõ ràng nhanh và ổn định.
+- Phù hợp các pattern có cấu trúc: mã đơn hàng, yêu cầu trạng thái, cụm từ nghiệp vụ cụ thể.
+
+### ML-based router
+- Dùng bộ phân loại intent heuristic + context features.
+- Ưu thế ở truy vấn mơ hồ, ngôn ngữ tự nhiên, thiếu từ khóa trực diện.
+
+### Fusion layer
+- Kết hợp confidence của rule và ML theo trọng số cấu hình.
+- Trả metadata orchestrator để theo dõi router nào được chọn và độ tin cậy.
+
+## Contract metadata cho frontend/backend
+
+Các key metadata nên được FE/BE coi là contract:
+- `model_info`: backend/model/version chạy response.
+- `flow`: luồng nghiệp vụ đang xử lý (`search`, `payment`, `checkout`, ...).
+- `grounding`: dữ liệu chứng cứ truy xuất thực tế cho câu trả lời search.
+- `action_required`: tín hiệu còn bước bắt buộc bên ngoài router (`order_id`, `backend_integration`, `clarification`).
+- `auth_required`: yêu cầu đăng nhập trước khi xử lý tác vụ giao dịch.
+
+## Gợi ý tối ưu tiếp theo (ưu tiên cao)
+
+1. Tích hợp backend thật cho `checkout`, `refund`, `return`.
+2. Bổ sung test tự động cho:
+   - Intent classification (rule/ML/fusion)
+   - Grounding integrity (có/không có citations)
+   - API failure contract (401/5xx)
+3. Xây dashboard chất lượng routing theo intent (precision/recall theo tuần).
+4. Thêm e2e test matrix cho các hội thoại đa bước (search -> cart -> checkout).
+
+## Test Matrix (đã bổ sung)
+
+Các test được thêm trong thư mục `tests/`:
+
+- `tests/test_intent_routing_matrix.py`
+  - Kiểm tra độ chính xác routing rule-based theo từng intent ecommerce.
+  - Kiểm tra mapping alias intent về canonical intent.
+
+- `tests/test_grounding_integrity.py`
+  - Kiểm tra tính hợp lệ của `grounding` metadata.
+  - Đảm bảo search grounding có evidence hợp lệ (`product_id`, `name`, `price_vnd`, `source`).
+
+- `tests/test_api_error_contract.py`
+  - Kiểm tra contract lỗi cho API integration với các mã: `401`, `403`, `404`, `500`.
+  - Xác nhận message phân biệt đúng nhánh `401` (auth) và các lỗi còn lại.
+
+- `tests/test_e2e_multistep_flow.py`
+  - Kiểm tra luồng đa bước: `search -> cart -> checkout -> payment -> shipping -> refund -> return`.
+  - Kiểm tra replay với `Idempotency-Key` cho transaction flow.
+
+## Guardrails bảo mật và quan sát (đã bổ sung)
+
+Guardrail được thêm tại tầng API trong `app.py`:
+
+- Rate limit cho transaction-like requests tại `/ask`.
+  - Cửa sổ mặc định: 60 giây.
+  - Giới hạn mặc định: 20 request.
+
+- Idempotency cho transaction-like requests.
+  - Bắt buộc header `Idempotency-Key`.
+  - Replay cùng key trả lại kết quả đã lưu, tránh xử lý trùng.
+
+- Alerting theo chất lượng vận hành.
+  - Theo dõi rolling intent error-rate.
+  - Theo dõi tỷ lệ API timeout theo ngưỡng latency.
+
+- Endpoint quan sát mới:
+  - `GET /guardrails/stats`
+  - `GET /guardrails/alerts`
 
 ### Các điểm cuối giám sát
 - **`GET /health`**: Kiểm tra tình trạng của ứng dụng.

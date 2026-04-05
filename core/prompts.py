@@ -95,6 +95,47 @@ Sản phẩm (đã kèm thông số liên quan):
 Trả lời ngắn gọn bằng tiếng Việt: (1) Xác nhận yêu cầu, (2) Giới thiệu 2-3 sản phẩm kèm giá VNĐ và thông số họ quan tâm, (3) So sánh/khuyên ngắn. Không lặp lại toàn bộ danh sách."""
 
     @staticmethod
+    def get_grounded_search_prompt(
+        query: str,
+        products: List[Dict[str, Any]],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Grounded prompt that forces output to reference retrieved products only."""
+        context = context or {}
+        products_for_prompt = products[:3]
+        facts_block = PromptTemplates._format_grounding_facts(products_for_prompt)
+        spec_keys = get_spec_keys_for_query(query)
+        spec_hint = ""
+        if spec_keys:
+            spec_hint = f"Người dùng quan tâm các thông số: {', '.join(spec_keys)}. Hãy đối chiếu đúng các thông số này từ dữ liệu thực tế."
+
+        history_hint = ""
+        previous_query = context.get("last_search_query")
+        if isinstance(previous_query, str) and previous_query.strip():
+            history_hint = f"Ngữ cảnh truy vấn trước đó: {previous_query.strip()}"
+
+        return f"""Bạn là trợ lý ecommerce. BẮT BUỘC grounding theo dữ liệu sản phẩm được cung cấp, KHÔNG tự bịa thêm.
+
+Yêu cầu người dùng: "{query}"
+{history_hint}
+{spec_hint}
+
+Dữ liệu sản phẩm truy xuất được (nguồn sự thật):
+{facts_block}
+
+Quy tắc bắt buộc:
+1. Chỉ được nhắc tới sản phẩm có trong danh sách trên.
+2. Mỗi sản phẩm nêu trong câu trả lời phải có product_id và giá VNĐ đúng dữ liệu.
+3. Nếu thiếu dữ liệu thông số, phải nói rõ "chưa có dữ liệu".
+4. Kết thúc bằng mục "Nguồn đối chiếu" theo mẫu: [product_id] tên - giá.
+
+Hãy trả lời ngắn gọn 3 phần:
+- Xác nhận nhu cầu.
+- Gợi ý tối đa 3 sản phẩm phù hợp, có product_id.
+- Nguồn đối chiếu.
+"""
+
+    @staticmethod
     def get_product_recommendation_prompt(
         user_preferences: Dict[str, Any], 
         products: List[Dict[str, Any]]
@@ -245,6 +286,55 @@ Bạn cần hỗ trợ gì cụ thể?"""
             return int(p)
         except (TypeError, ValueError):
             return 0
+
+    @staticmethod
+    def _product_price_vnd(product: Dict[str, Any]) -> int:
+        """Read canonical VND price from normalized fields with legacy fallback."""
+        price_vnd = product.get("price_vnd")
+        if price_vnd is not None:
+            try:
+                return int(float(price_vnd))
+            except (TypeError, ValueError):
+                pass
+        return PromptTemplates._price_for_display(product.get("price", 0))
+
+    @staticmethod
+    def _format_grounding_facts(products: List[Dict[str, Any]]) -> str:
+        """Create a compact evidence block for LLM grounding."""
+        if not products:
+            return "(không có dữ liệu sản phẩm)"
+
+        lines: List[str] = []
+        for product in products:
+            product_id = product.get("backend_id") or product.get("id") or "unknown_id"
+            price_vnd = PromptTemplates._product_price_vnd(product)
+            specs = product.get("specifications") or {}
+            if not isinstance(specs, dict):
+                specs = {}
+            highlighted_specs = []
+            for key in ["ram", "rom", "pin", "camera", "màn hình", "chip"]:
+                value = specs.get(key)
+                if value:
+                    highlighted_specs.append(f"{key}: {value}")
+            spec_text = "; ".join(highlighted_specs) if highlighted_specs else "chưa có dữ liệu thông số"
+            lines.append(
+                f"- id={product_id} | tên={product.get('name', 'Unknown')} | brand={product.get('brand', 'Unknown')} | "
+                f"giá_vnd={price_vnd:,} | category={product.get('category', 'Khác')} | specs={spec_text}"
+            )
+        return "\n".join(lines)
+
+    @staticmethod
+    def build_grounding_reference_block(products: List[Dict[str, Any]], max_items: int = 3) -> str:
+        """Build deterministic citation lines for UI/API metadata or fallback responses."""
+        if not products:
+            return "Nguồn đối chiếu: không có sản phẩm phù hợp."
+
+        lines = ["Nguồn đối chiếu:"]
+        for product in products[:max_items]:
+            product_id = product.get("backend_id") or product.get("id") or "unknown_id"
+            price_vnd = PromptTemplates._product_price_vnd(product)
+            lines.append(f"- [{product_id}] {product.get('name', 'Unknown')} - {price_vnd:,} VNĐ")
+        return "\n".join(lines)
 
     @staticmethod
     def _format_products(

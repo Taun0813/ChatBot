@@ -74,7 +74,13 @@ class MLRouter:
         self.intent_mapping = {
             "product_search": "search",
             "order_inquiry": "order", 
-            "payment_question": "order",
+            "payment_question": "payment",
+            "warranty_inquiry": "warranty",
+            "shipping_inquiry": "shipping",
+            "cart_management": "cart",
+            "checkout_request": "checkout",
+            "refund_request": "refund",
+            "return_request": "return",
             "general_chat": "chat",
             "api_call": "api"
         }
@@ -174,6 +180,24 @@ class SimpleIntentClassifier:
                 "thanh toán", "payment", "invoice", "hóa đơn", "tiền",
                 "giá", "cost", "price", "vnd", "triệu", "nghìn"
             ],
+            "warranty_inquiry": [
+                "bảo hành", "warranty", "điều khoản", "sửa chữa", "bảo trì"
+            ],
+            "shipping_inquiry": [
+                "ship", "shipping", "giao", "vận chuyển", "tracking", "đang giao", "bao lâu"
+            ],
+            "cart_management": [
+                "giỏ hàng", "cart", "thêm vào giỏ", "xóa khỏi giỏ", "cập nhật giỏ"
+            ],
+            "checkout_request": [
+                "checkout", "đặt hàng", "chốt đơn", "xác nhận đơn", "mua ngay"
+            ],
+            "refund_request": [
+                "hoàn tiền", "refund", "trả tiền", "refund status"
+            ],
+            "return_request": [
+                "đổi trả", "trả hàng", "return", "đổi sản phẩm", "return request"
+            ],
             "api_call": [
                 "api", "service", "dịch vụ", "tích hợp", "kết nối",
                 "webhook", "endpoint"
@@ -188,6 +212,12 @@ class SimpleIntentClassifier:
             "product_search": 1.0,
             "order_inquiry": 0.9,
             "payment_question": 0.8,
+            "warranty_inquiry": 0.8,
+            "shipping_inquiry": 0.85,
+            "cart_management": 0.8,
+            "checkout_request": 0.85,
+            "refund_request": 0.8,
+            "return_request": 0.8,
             "api_call": 0.7,
             "general_chat": 0.5
         }
@@ -223,6 +253,10 @@ class SimpleIntentClassifier:
         
         if context_features.get("has_order_mentions", False):
             intent_scores["order_inquiry"] *= 1.2
+            intent_scores["shipping_inquiry"] *= 1.15
+            intent_scores["refund_request"] *= 1.1
+            intent_scores["return_request"] *= 1.1
+            intent_scores["payment_question"] *= 1.1
         
         if context_features.get("has_price_mentions", False):
             intent_scores["payment_question"] *= 1.1
@@ -561,10 +595,18 @@ class AgnoRouter:
             Rule("product_stock_check", r"(tồn kho|còn hàng|hết hàng|stock)", "search", priority=8),
             Rule("product_comparison", r"(so sánh|so sanh|compare|đối chiếu)", "search", priority=7),
             
+            # Ecommerce transactional rules
+            Rule("cart_management", r"(giỏ hàng|cart|thêm vào giỏ|xóa khỏi giỏ|cập nhật giỏ)", "cart", priority=8),
+            Rule("checkout", r"(checkout|đặt hàng|chốt đơn|xác nhận đơn|mua ngay)", "checkout", priority=8),
+            Rule("refund", r"(hoàn tiền|refund|trả tiền)", "refund", priority=8),
+            Rule("return", r"(đổi trả|trả hàng|return|đổi sản phẩm)", "return", priority=8),
+            Rule("shipping", r"(shipping|ship|theo dõi giao hàng|tracking|đang giao|bao lâu nhận)", "shipping", priority=8),
+            Rule("warranty", r"(bảo hành|warranty|điều khoản bảo hành|hết hạn bảo hành)", "warranty", priority=8),
+            Rule("payment", r"(thanh toán|payment|invoice|hóa đơn|chuyển khoản|visa|momo)", "payment", priority=8),
+
             # Order-related rules
             Rule("order_status", r"(đơn hàng|order|giao hàng|vận chuyển|trạng thái|hủy|đổi|trả)", "order", priority=7),
             Rule("order_number", r"#\d+|\d{4,}", "order", priority=6),
-            Rule("payment", r"(thanh toán|payment|invoice|hóa đơn)", "order", priority=5),
             
             # API/Service rules
             Rule("api_call", r"(api|service|dịch vụ|tích hợp|kết nối)", "api", priority=4),
@@ -1140,16 +1182,48 @@ class AgnoRouter:
         context: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Process request with determined intent using existing router logic"""
-        
+        intent = self._normalize_intent(intent)
+
         # Use existing router's request handling logic
         if intent == "search":
             return await self._handle_search_request(message, user_id, context)
         elif intent == "order":
             return await self._handle_order_request(message, user_id, context)
+        elif intent == "shipping":
+            return await self._handle_shipping_request(message, user_id, context)
+        elif intent == "payment":
+            return await self._handle_payment_request(message, user_id, context)
+        elif intent == "warranty":
+            return await self._handle_warranty_request(message, user_id, context)
+        elif intent == "cart":
+            return await self._handle_cart_request(message, user_id, context)
+        elif intent == "checkout":
+            return await self._handle_checkout_request(message, user_id, context)
+        elif intent == "refund":
+            return await self._handle_refund_request(message, user_id, context)
+        elif intent == "return":
+            return await self._handle_return_request(message, user_id, context)
         elif intent == "api":
             return await self._handle_api_request(message, user_id, context)
         else:  # chat
             return await self._handle_chat_request(message, user_id, context)
+
+    def _normalize_intent(self, intent: Optional[str]) -> str:
+        """Normalize external or model intents to the router canonical intent names."""
+        normalized = (intent or "").strip().lower()
+        aliases = {
+            "api_call": "api",
+            "product_search": "search",
+            "order_inquiry": "order",
+            "payment_question": "payment",
+            "warranty_inquiry": "warranty",
+            "shipping_inquiry": "shipping",
+            "cart_management": "cart",
+            "checkout_request": "checkout",
+            "refund_request": "refund",
+            "return_request": "return",
+        }
+        return aliases.get(normalized, normalized or "chat")
     
     def _route_request(self, message: str) -> str:
         """
@@ -1285,6 +1359,11 @@ class AgnoRouter:
                     products=products_to_compare[:2],
                     user_id=user_id,
                 )
+                grounding = self._build_grounding_metadata(
+                    query=effective_message,
+                    products=products_to_compare[:2],
+                    max_citations=2,
+                )
                 return {
                     "response": comparison_response,
                     "intent": "search",
@@ -1300,6 +1379,7 @@ class AgnoRouter:
                             item.get("specs_url") for item in products_to_compare[:2] if item.get("specs_url")
                         ],
                         "model_used": "rag",
+                        "grounding": grounding,
                         "cached": False,
                     },
                 }
@@ -1334,6 +1414,12 @@ class AgnoRouter:
                         status = "Hết hàng"
                     lines.append(f"{i}. {product.get('name', 'Unknown')} ({product.get('brand', 'Unknown')}) - {status} (ước tính: {stock} sản phẩm)")
 
+                grounding = self._build_grounding_metadata(
+                    query=effective_message,
+                    products=stock_results,
+                    max_citations=3,
+                )
+
                 return {
                     "response": "\n".join(lines),
                     "intent": "search",
@@ -1349,6 +1435,7 @@ class AgnoRouter:
                             item.get("specs_url") for item in stock_results if item.get("specs_url")
                         ],
                         "model_used": "rag",
+                        "grounding": grounding,
                         "cached": False,
                     },
                 }
@@ -1384,6 +1471,12 @@ class AgnoRouter:
                 context=context,
                 max_products_in_prompt=3,
             )
+
+            grounding = self._build_grounding_metadata(
+                query=effective_message,
+                products=search_results,
+                max_citations=3,
+            )
             
             # Prepare result
             result = {
@@ -1402,6 +1495,7 @@ class AgnoRouter:
                     "model_used": "rag",
                     "resolved_query": effective_message,
                     "personalized": self.personalization_model is not None and user_id is not None,
+                    "grounding": grounding,
                     "cached": False
                 }
             }
@@ -1441,6 +1535,53 @@ class AgnoRouter:
             return False
         message_lower = message.lower()
         return any(keyword in message_lower for keyword in ["tồn kho", "còn hàng", "hết hàng", "stock"])
+
+    def _build_grounding_metadata(
+        self,
+        query: str,
+        products: List[Dict[str, Any]],
+        max_citations: int = 3,
+    ) -> Dict[str, Any]:
+        """Build explicit grounding metadata from retrieved products."""
+        citations: List[Dict[str, Any]] = []
+        evidence_ids: List[str] = []
+
+        for product in products[:max_citations]:
+            product_id = str(product.get("backend_id") or product.get("id") or "").strip()
+            if not product_id:
+                continue
+
+            price_vnd_raw = product.get("price_vnd", product.get("price", 0))
+            try:
+                price_vnd = int(float(price_vnd_raw or 0))
+            except (TypeError, ValueError):
+                price_vnd = 0
+
+            citations.append(
+                {
+                    "product_id": product_id,
+                    "name": product.get("name", "Unknown"),
+                    "brand": product.get("brand", "Unknown"),
+                    "category": product.get("category", "Khác"),
+                    "price_vnd": price_vnd,
+                    "availability": product.get("availability", "Unknown"),
+                    "similarity_score": float(product.get("similarity_score", 0.0) or 0.0),
+                    "source": product.get("source", "vector_store"),
+                    "source_id": product.get("source_id"),
+                    "product_url": product.get("product_url"),
+                    "specs_url": product.get("specs_url"),
+                }
+            )
+            evidence_ids.append(product_id)
+
+        return {
+            "query": query,
+            "grounded": bool(citations),
+            "evidence_count": len(citations),
+            "evidence_ids": evidence_ids,
+            "citations": citations,
+            "grounding_policy": "retrieval_only",
+        }
     
     async def _safe_record_interaction(self, user_id: str, query: str) -> None:
         """Ghi nhận tương tác trong background; bắt lỗi để không ảnh hưởng request."""
@@ -1538,6 +1679,282 @@ class AgnoRouter:
                 "intent": "order",
                 "confidence": 0.0,
                 "metadata": {"error": str(e)}
+            }
+
+    async def _handle_payment_request(
+        self,
+        message: str,
+        user_id: Optional[str],
+        context: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Handle payment-related requests using API model."""
+        try:
+            if not self._is_authenticated(user_id, context):
+                return self._auth_required_response("payment")
+
+            response = await self.api_model.handle_payment_request(
+                message=message,
+                user_id=user_id,
+                context=context,
+            )
+            return {
+                "response": response,
+                "intent": "payment",
+                "confidence": 0.82,
+                "metadata": {
+                    "model_used": "api",
+                    "flow": "payment",
+                },
+            }
+        except Exception as e:
+            logger.error("Error in payment request: %s", e)
+            return {
+                "response": "Xin lỗi, tôi không thể xử lý yêu cầu thanh toán lúc này. Vui lòng thử lại sau.",
+                "intent": "payment",
+                "confidence": 0.0,
+                "metadata": {"error": str(e)},
+            }
+
+    async def _handle_shipping_request(
+        self,
+        message: str,
+        user_id: Optional[str],
+        context: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Handle shipping/tracking requests via order service."""
+        try:
+            if not self._is_authenticated(user_id, context):
+                return self._auth_required_response("shipping")
+
+            response = await self.api_model.handle_order_request(
+                message=message,
+                user_id=user_id,
+                context=context,
+            )
+            return {
+                "response": response,
+                "intent": "shipping",
+                "confidence": 0.81,
+                "metadata": {
+                    "model_used": "api",
+                    "flow": "shipping",
+                },
+            }
+        except Exception as e:
+            logger.error("Error in shipping request: %s", e)
+            return {
+                "response": "Xin lỗi, tôi không thể tra cứu vận chuyển lúc này. Vui lòng thử lại sau.",
+                "intent": "shipping",
+                "confidence": 0.0,
+                "metadata": {"error": str(e)},
+            }
+
+    async def _handle_warranty_request(
+        self,
+        message: str,
+        user_id: Optional[str],
+        context: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Handle warranty-related requests using API model."""
+        try:
+            if not self._is_authenticated(user_id, context):
+                return self._auth_required_response("warranty")
+
+            response = await self.api_model.handle_warranty_request(
+                message=message,
+                user_id=user_id,
+                context=context,
+            )
+            return {
+                "response": response,
+                "intent": "warranty",
+                "confidence": 0.8,
+                "metadata": {
+                    "model_used": "api",
+                    "flow": "warranty",
+                },
+            }
+        except Exception as e:
+            logger.error("Error in warranty request: %s", e)
+            return {
+                "response": "Xin lỗi, tôi không thể xử lý yêu cầu bảo hành lúc này. Vui lòng thử lại sau.",
+                "intent": "warranty",
+                "confidence": 0.0,
+                "metadata": {"error": str(e)},
+            }
+
+    async def _handle_cart_request(
+        self,
+        message: str,
+        user_id: Optional[str],
+        context: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Handle cart-related requests using API model."""
+        try:
+            if not self._is_authenticated(user_id, context):
+                return self._auth_required_response("cart")
+
+            response = await self.api_model.handle_cart_request(
+                message=message,
+                user_id=user_id,
+                context=context,
+            )
+            return {
+                "response": response,
+                "intent": "cart",
+                "confidence": 0.82,
+                "metadata": {
+                    "model_used": "api",
+                    "flow": "cart",
+                },
+            }
+        except Exception as e:
+            logger.error("Error in cart request: %s", e)
+            return {
+                "response": "Xin lỗi, tôi chưa thể xử lý giỏ hàng lúc này.",
+                "intent": "cart",
+                "confidence": 0.0,
+                "metadata": {"error": str(e)},
+            }
+
+    async def _handle_checkout_request(
+        self,
+        message: str,
+        user_id: Optional[str],
+        context: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Handle checkout requests with clear backend capability signaling."""
+        try:
+            if not self._is_authenticated(user_id, context):
+                return self._auth_required_response("checkout")
+
+            response = (
+                "Tôi đã nhận yêu cầu checkout/chốt đơn. "
+                "Để hoàn tất, bạn cần cung cấp địa chỉ nhận hàng, phương thức thanh toán và xác nhận danh sách sản phẩm. "
+                "Hiện endpoint checkout chuyên dụng chưa được nối trực tiếp trong router."
+            )
+            return {
+                "response": response,
+                "intent": "checkout",
+                "confidence": 0.76,
+                "metadata": {
+                    "model_used": "router",
+                    "flow": "checkout",
+                    "action_required": "backend_integration",
+                },
+            }
+        except Exception as e:
+            logger.error("Error in checkout request: %s", e)
+            return {
+                "response": "Xin lỗi, tôi chưa thể xử lý checkout lúc này.",
+                "intent": "checkout",
+                "confidence": 0.0,
+                "metadata": {"error": str(e)},
+            }
+
+    def _extract_order_number_from_message(self, message: str) -> Optional[str]:
+        """Extract order number from arbitrary ecommerce requests."""
+        if not (message or "").strip():
+            return None
+
+        patterns = [r"#(\d+)", r"order\s+(\d+)", r"đơn\s+hàng\s+(\d+)", r"(\d{4,})"]
+        lowered = message.lower()
+        for pattern in patterns:
+            match = re.search(pattern, lowered)
+            if match:
+                return match.group(1)
+        return None
+
+    async def _handle_refund_request(
+        self,
+        message: str,
+        user_id: Optional[str],
+        context: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Handle refund intents with order-aware guidance."""
+        try:
+            if not self._is_authenticated(user_id, context):
+                return self._auth_required_response("refund")
+
+            order_id = self._extract_order_number_from_message(message)
+            if not order_id:
+                return {
+                    "response": "Để yêu cầu hoàn tiền, bạn vui lòng cung cấp mã đơn hàng (ví dụ #12345).",
+                    "intent": "refund",
+                    "confidence": 0.74,
+                    "metadata": {
+                        "flow": "refund",
+                        "action_required": "order_id",
+                    },
+                }
+
+            return {
+                "response": (
+                    f"Tôi đã ghi nhận yêu cầu hoàn tiền cho đơn #{order_id}. "
+                    "Hiện backend refund chuyên dụng chưa được tích hợp trực tiếp trong router, "
+                    "nhưng tôi có thể hỗ trợ bạn kiểm tra trạng thái đơn trước khi tạo ticket hoàn tiền."
+                ),
+                "intent": "refund",
+                "confidence": 0.78,
+                "metadata": {
+                    "flow": "refund",
+                    "order_id": order_id,
+                    "action_required": "backend_integration",
+                },
+            }
+        except Exception as e:
+            logger.error("Error in refund request: %s", e)
+            return {
+                "response": "Xin lỗi, tôi chưa thể xử lý yêu cầu hoàn tiền lúc này.",
+                "intent": "refund",
+                "confidence": 0.0,
+                "metadata": {"error": str(e)},
+            }
+
+    async def _handle_return_request(
+        self,
+        message: str,
+        user_id: Optional[str],
+        context: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Handle return/exchange intents with order-aware guidance."""
+        try:
+            if not self._is_authenticated(user_id, context):
+                return self._auth_required_response("return")
+
+            order_id = self._extract_order_number_from_message(message)
+            if not order_id:
+                return {
+                    "response": "Để tạo yêu cầu đổi/trả, bạn vui lòng cung cấp mã đơn hàng (ví dụ #12345).",
+                    "intent": "return",
+                    "confidence": 0.74,
+                    "metadata": {
+                        "flow": "return",
+                        "action_required": "order_id",
+                    },
+                }
+
+            return {
+                "response": (
+                    f"Tôi đã ghi nhận yêu cầu đổi/trả cho đơn #{order_id}. "
+                    "Hiện backend return chuyên dụng chưa được tích hợp trực tiếp trong router, "
+                    "nhưng tôi có thể hỗ trợ bạn kiểm tra điều kiện đổi/trả và trạng thái giao hàng trước."
+                ),
+                "intent": "return",
+                "confidence": 0.78,
+                "metadata": {
+                    "flow": "return",
+                    "order_id": order_id,
+                    "action_required": "backend_integration",
+                },
+            }
+        except Exception as e:
+            logger.error("Error in return request: %s", e)
+            return {
+                "response": "Xin lỗi, tôi chưa thể xử lý yêu cầu đổi/trả lúc này.",
+                "intent": "return",
+                "confidence": 0.0,
+                "metadata": {"error": str(e)},
             }
     
     async def _handle_api_request(
